@@ -19,9 +19,12 @@ import javax.sql.DataSource
  */
 class Store(
     val dialect: SqlDialect,
-    val dataSource: DataSource,
+    rawDataSource: DataSource,
     val tables: Tables,
 ) {
+
+    /** 所有连接都要过主线程守卫（AC-24） */
+    val dataSource: DataSource = GuardedDataSource(rawDataSource)
 
     /** 建表 + 建索引（幂等：`CREATE TABLE/INDEX IF NOT EXISTS`） */
     fun initSchema() {

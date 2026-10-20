@@ -1,10 +1,10 @@
 package cn.trtown
 
+import cn.trtown.platform.PlatformScheduler
 import cn.trtown.store.Storage
 import taboolib.common.platform.Plugin
 import taboolib.common.platform.function.info
 import taboolib.common.platform.function.severe
-import taboolib.common.platform.function.submitAsync
 import taboolib.platform.BukkitPlugin
 
 /** 插件版本，与 gradle.properties 中的 version 保持一致 */
@@ -26,7 +26,7 @@ object TrTown : Plugin() {
         info("TrTown v$VERSION 已启用")
         TrTownCommand.register()
         // 建池 + 建表必须异步：submitAsync(now = true) 会在调用线程同步执行（AC-29）
-        submitAsync(delay = 1) {
+        PlatformScheduler.runAsync(delayTicks = 1) {
             runCatching { Storage.init(BukkitPlugin.getInstance().dataFolder) }
                 .onSuccess {
                     info("存储就绪：${it.dialect}，共 ${it.tables.all.size} 张表")

@@ -15,6 +15,9 @@ object Storage {
     val ready: Boolean
         get() = current != null
 
+    /** 未就绪时返回 null（命令层据此给玩家明确提示，而不是抛异常，M-2） */
+    fun storeOrNull(): Store? = current
+
     val store: Store
         get() = current ?: error("存储尚未初始化")
 
