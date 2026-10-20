@@ -1,6 +1,109 @@
-# TrTown 默认配置
-# S0 阶段仅包含探针所需的最小配置项，后续步骤按 PLAN §5.7 补齐。
+# TrTown 默认配置（对应 PLAN §5.7）
+# 改动后执行 /trtown admin reload 生效（storage 项需要重启）。
 
-probe:
-  # 探针读取的示例值，用于验证 @Config 注入是否生效
-  value: "probe-ok"
+storage:
+  type: sqlite                      # sqlite / mysql
+  sqlite-pool-size: 2               # SQLite 并发写会锁库，池子保持 1-2
+  mysql:
+    host: localhost
+    port: 3306
+    database: trtown
+    user: root
+    password: ""
+    pool-size: 10
+
+town:
+  max-members: 20
+  max-towns-per-player: 1
+  name-regex: "^[A-Za-z0-9_\\u4e00-\\u9fa5]{3,16}$"
+  invite-expire-seconds: 300
+  max-pending-invites: 50
+  disband-confirm-seconds: 10
+  transfer-demote-to: MEMBER        # 转让后原镇长降为 MEMBER 或 MANAGER
+
+prefix:
+  enabled: true
+  max-length: 16                    # 去掉颜色码后的可见字符数
+  allow-color: true                 # 允许 & 颜色码
+  display-format: "&8[&b%s&8] &r"   # %s = 前缀原文，最终由 PAPI 变量 %trtown_prefix% 输出
+  fallback-to-name: true            # 未设置前缀时用镇名
+  cooldown-seconds: 0               # 0 = 随时可改
+  deny-chars: ["%", "{", "}", "[", "]", "§"]   # 命中即拒绝（防 PAPI 递归 / 伪造系统标签）
+
+permissions:
+  allow-override: true              # false = 整个个人权限覆写功能下线（R12 实验不通过时用）
+  editable-flags: [teleport, fly, pvp, ignite, hopper, container, chest, door, button, lever,
+                   place, break, craft, enchant, pick_up, drop_item]
+  aliases:
+    传送: teleport
+    飞行: fly
+    PvP: pvp
+    点燃: ignite
+    漏斗: hopper
+    箱子: chest
+    容器: container
+    门: door
+    按钮: button
+    拉杆: lever
+    放置: place
+    破坏: break
+    工作台: craft
+    附魔: enchant
+    拾取: pick_up
+    丢弃: drop_item
+
+dominion:
+  # %1 = 镇 id（用 id 不用镇名，避免改名后组名漂移），%2 = 阶级名
+  group-name-format: "TrTown_%s_%s"
+  # key 必须写 Dominion 的 flag_name（全小写），不是常量名。
+  # 实证：Flags.getPreFlag(key) 内部是 flag.getFlagName().equals(key)，大小写敏感。
+  # 陷阱：破坏方块常量叫 BREAK_BLOCK，flag_name 是 "break"；重命名领地是 "rename_dominion"。
+  # 语义是"叠加"：某阶级生效 flag = 从 MEMBER 到该阶级的并集；低阶 true 而高阶显式 false → 启动校验报错
+  roles:
+    MEMBER:
+      place: true
+      break: true
+      container: true
+      chest: true
+      door: true
+      trapdoor: true
+      fence_gate: true
+      button: true
+      lever: true
+      craft: true
+      anvil: true
+      enchant: true
+      furnace: true
+      bed: true
+      lectern: true
+      pick_up: true
+      drop_item: true
+      harvest: true
+      sowing: true
+      fertilizer: true
+    MANAGER:                   # 在 MEMBER 基础上额外开启；即"领地管理员"
+      teleport: true
+      fly: true
+      pvp: true
+      ignite: true
+      hopper: true
+      dropper: true
+      dispenser: true
+      brew: true
+      beacon: true
+      trade: true
+      shear: true
+      feed: true
+      admin: true              # 管理普通成员和分组
+      resize: true             # ↓ 6 项为领地本体操作（用户拍板全给，风险见 README）
+      rename_dominion: true
+      create_sub: true
+      delete_sub: true
+      resize_sub: true
+      rename_sub: true
+    MAYOR: {}                  # 在 MANAGER 基础上额外开启；当前无额外项
+
+sync:
+  poll-ticks: 20
+  max-attempts: 5
+  backoff-seconds: [5, 30, 120, 600]

@@ -42,6 +42,13 @@ dependencies {
     compileOnly("dev.folia:folia-api:26.3.build.3-alpha")
     compileOnly("cn.lunadeer:DominionAPI:4.9.6")
     compileOnly(kotlin("stdlib"))
+
+    testImplementation(kotlin("test"))
+    testImplementation("org.junit.jupiter:junit-jupiter:5.11.4")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher:1.11.4")
+    // 仓储单测直接用驱动自带的 DataSource，不依赖 TabooLib 运行期下载
+    testImplementation("org.xerial:sqlite-jdbc:3.53.4.0")
+    testImplementation("com.h2database:h2:2.5.252")
 }
 
 // folia-api 26.3 自身编译目标是 Java 25（Gradle 会拒绝低于 25 的消费者），
@@ -58,5 +65,12 @@ tasks.withType<JavaCompile> {
 tasks.withType<KotlinCompile> {
     compilerOptions {
         jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_25)
+    }
+}
+
+tasks.test {
+    useJUnitPlatform()
+    testLogging {
+        events("passed", "failed", "skipped")
     }
 }
