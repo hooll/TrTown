@@ -65,6 +65,8 @@ class InviteService(
         repos.members.insert(member)
         enqueue(town, SyncAction.GRANT, target)
         repos.audit.append(target, town.id, "accept", invite.inviterUuid.toString(), now)
+        // M-15：入服时可能写过 60 s 负缓存，接受邀请后必须立刻失效
+        CacheHooks.invalidate(target)
         return member
     }
 

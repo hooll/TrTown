@@ -26,6 +26,7 @@ class MembershipService(
         repos.members.delete(town.id, actor)
         enqueue(town, actor)
         repos.audit.append(actor, town.id, "leave", member.role.name, clock())
+        CacheHooks.invalidate(actor)
     }
 
     fun kick(actor: UUID, target: UUID) {
@@ -44,6 +45,7 @@ class MembershipService(
         repos.members.delete(town.id, target)
         enqueue(town, target)
         repos.audit.append(actor, town.id, "kick", "$target (${targetMember.role.name})", clock())
+        CacheHooks.invalidate(target)
     }
 
     private fun enqueue(town: Town, target: UUID) {

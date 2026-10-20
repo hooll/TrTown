@@ -55,6 +55,8 @@ object TrTown : Plugin() {
 
         TownCommand.register()
         Lifecycle.registerListener()
+        // M-15：服务层变更（建镇/入镇/退镇/改角色/改前缀/解散）要能立刻刷新 PAPI 缓存
+        cn.trtown.papi.PlaceholderCache.installHooks()
 
         // 建池 + 建表必须异步：submitAsync(now = true) 会在调用线程同步执行（AC-29）
         PlatformScheduler.runAsync(delayTicks = 1) {

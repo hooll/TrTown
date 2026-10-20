@@ -100,6 +100,19 @@ object PlaceholderCache {
         },
         loadedAt = System.currentTimeMillis(),
     )
+
+    /**
+     * M-15：把服务层的变更点接到缓存上。
+     *
+     * 只失效不刷新的话，玩家下一条聊天仍拿到空串（再下一次才有），
+     * 因此这里对**在线玩家**做"失效 + 立刻异步重建"。
+     */
+    fun installHooks() {
+        cn.trtown.service.CacheHooks.invalidator = { uuid ->
+            invalidate(uuid)
+            if (org.bukkit.Bukkit.getPlayer(uuid) != null) refreshAsync(uuid)
+        }
+    }
 }
 
 /** PlaceholderAPI 扩展：`%trtown_prefix%` 等 5 个变量 */

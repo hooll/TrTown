@@ -43,6 +43,8 @@ class TownService(
         }
         repos.members.insert(Member(town.id, actor, TownRole.MAYOR, emptyMap(), now))
         repos.audit.append(actor, town.id, "create", trimmed, now)
+        // M-15：入服时可能已写入 60 s 负缓存，建镇后必须立刻失效
+        CacheHooks.invalidate(actor)
         return town
     }
 
@@ -60,6 +62,7 @@ class TownService(
         repos.members.updateRole(town.id, target, role)
         enqueue(town, SyncAction.MOVE_GROUP, target)
         repos.audit.append(actor, town.id, "setrole", "$target -> ${role.name}", clock())
+        CacheHooks.invalidate(target)
         return targetMember.copy(role = role)
     }
 
@@ -79,6 +82,8 @@ class TownService(
         enqueue(town, SyncAction.MOVE_GROUP, target)
         enqueue(town, SyncAction.MOVE_GROUP, actor)
         repos.audit.append(actor, town.id, "transfer", "$actor -> $target", clock())
+        CacheHooks.invalidate(target)
+        CacheHooks.invalidate(actor)
         return repos.towns.findById(town.id) ?: town.copy(ownerUuid = target)
     }
 
@@ -95,7 +100,8 @@ class TownService(
         // M-6：名字立刻墓碑化，同名新镇可以马上建
         repos.towns.tombstoneName(town.id, town.name)
         // 成员逐个 REVOKE 后删成员行
-        repos.members.listByTown(town.id).forEach { member ->
+        val disbanded = repos.members.listByTown(town.id)
+        disbanded.forEach { member ->
             enqueue(town, SyncAction.REVOKE, member.uuid)
             repos.members.delete(town.id, member.uuid)
         }
@@ -109,6 +115,8 @@ class TownService(
         repos.invites.deleteByTown(town.id)
         repos.towns.updateState(town.id, TownState.DISBANDED)
         repos.audit.append(actor, town.id, "disband", town.name, now)
+        // M-15：解散后所有原成员的前缀/角色都必须失效
+        disbanded.forEach { CacheHooks.invalidate(it.uuid) }
         // 没有绑定领地 → 没有同步任务 → 立即收尾
         if (town.dominionId == null) finalizeDisband(town.id)
         return town.copy(state = TownState.DISBANDED)
