@@ -17,6 +17,8 @@ import cn.trtown.service.TownRules
 import cn.trtown.service.TownService
 import org.bukkit.Bukkit
 import org.bukkit.entity.Player
+import org.bukkit.permissions.Permission
+import org.bukkit.permissions.PermissionDefault
 import taboolib.common.platform.ProxyCommandSender
 import taboolib.common.platform.command.command
 import java.util.UUID
@@ -39,6 +41,7 @@ object TownCommand {
     )
 
     fun register() {
+        registerPermissions()
         command("trtown", aliases = listOf("tt"), permission = "trtown.use") {
             literal("version") {
                 execute<ProxyCommandSender> { sender, _, _ -> sender.sendMessage("§bTrTown §fv$VERSION") }
@@ -343,6 +346,16 @@ object TownCommand {
     }
 
     private fun findPlayer(name: String): UUID? = Bukkit.getPlayerExact(name)?.uniqueId
+
+    /**
+     * M-12：命令权限节点必须在运行时注册，否则未在 plugin.yml 声明的节点对非 OP 默认 false，
+     * 玩家连 `/trtown` 都进不去。
+     */
+    private fun registerPermissions() {
+        val manager = Bukkit.getPluginManager()
+        manager.addPermission(Permission("trtown.use", null, PermissionDefault.TRUE))
+        manager.addPermission(Permission("trtown.admin", null, PermissionDefault.OP))
+    }
 
     private fun findInvite(uuid: UUID, townName: String): cn.trtown.model.Invite {
         val pending = repos().invites.listPendingByTarget(uuid)

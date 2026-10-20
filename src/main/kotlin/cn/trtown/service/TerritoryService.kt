@@ -42,7 +42,7 @@ class TerritoryService(
         val holder = repos.towns.findByDominionId(ref.id)
         if (holder != null && holder.id != town.id) {
             if (holder.state == TownState.DISBANDED) {
-                if (repos.tasks.countPendingByTown(holder.id) > 0) {
+                if (repos.tasks.countUnfinishedByTown(holder.id) > 0) {
                     throw TownException(TownError.DOMINION_IN_USE, "旧镇解散尚未完成，请稍后再试")
                 }
                 towns.finalizeDisband(holder.id)
@@ -51,10 +51,17 @@ class TerritoryService(
             }
         }
 
-        // 换绑：先把旧领地全量 REVOKE
+        // 换绑：先把旧领地全量 REVOKE，再给旧领地的 owned 组入队 DELETE_GROUP（M-11）
         val oldDominionId = town.dominionId
         if (oldDominionId != null && oldDominionId != ref.id) {
             revokeAll(town, oldDominionId)
+            repos.groups.listByTown(town.id).filter { it.owned }.forEach { group ->
+                repos.tasks.enqueue(
+                    town.id, oldDominionId, SyncAction.DELETE_GROUP, null,
+                    "{\"group_id\":${group.groupId},\"group_name\":\"${group.groupName}\"}", clock(),
+                )
+            }
+            repos.groups.deleteByTown(town.id)
         }
 
         // 建组（失败回滚本次创建的组）

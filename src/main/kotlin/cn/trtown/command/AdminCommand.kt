@@ -113,6 +113,10 @@ object AdminCommand {
                 }
             }
         }
+        // M-10：DEAD 任务必须可见，否则权限可能残留在 Dominion 而账本已被删
+        repos.tasks.listByTown(town.id)
+            .filter { it.state == cn.trtown.model.SyncState.DEAD }
+            .forEach { diffs += "DEAD 任务 #${it.id} ${it.action}：${it.lastError ?: "未知错误"}（可 admin retry 重试）" }
         return diffs
     }
 }

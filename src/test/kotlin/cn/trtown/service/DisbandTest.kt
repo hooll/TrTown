@@ -147,6 +147,26 @@ class DisbandTest {
     }
 
     @Test
+    fun `M-10 DEAD 任务阻塞解散收尾`() {
+        val owner = UUID.randomUUID()
+        val town = towns.create(owner, "青云镇")
+        repos.towns.updateDominion(town.id, 45)
+        towns.disband(owner)
+
+        val task = repos.tasks.listByTown(town.id).first()
+        repos.tasks.markAttempt(task.id, "boom", 5, now, dead = true, now = now)
+
+        assertEquals(false, towns.finalizeDisband(town.id), "DEAD 任务未清时不得收尾")
+        assertEquals(45, repos.towns.findById(town.id)?.dominionId)
+
+        // admin retry 复活后完成，才允许收尾
+        repos.tasks.resetDead(now)
+        repos.tasks.listByTown(town.id).forEach { repos.tasks.markDone(it.id, now) }
+        assertEquals(true, towns.finalizeDisband(town.id))
+        assertNull(repos.towns.findById(town.id)?.dominionId)
+    }
+
+    @Test
     fun `未绑定领地的镇解散后立即收尾且没有同步任务`() {
         val owner = UUID.randomUUID()
         val town = towns.create(owner, "青云镇")

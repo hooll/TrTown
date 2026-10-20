@@ -113,6 +113,26 @@ class BindingAndPermissionTest {
         managerFlags.filter { it.value }.keys.forEach { assertTrue(mayorFlags[it] == true, "递进断裂：$it") }
     }
 
+    // ---- M-11 ----
+
+    @Test
+    fun `M-11 换绑会为旧领地的组入队 DELETE_GROUP`() {
+        installRealisticConfig()
+        val owner = UUID.randomUUID()
+        towns.create(owner, "青云镇")
+        fake.addDominion(DominionRef(42, owner, "旧地"))
+        territory.setterritory(owner, "旧地")
+        fake.addDominion(DominionRef(43, owner, "新地"))
+
+        territory.setterritory(owner, "新地")
+
+        val deletes = repos.tasks.listByTown(repos.towns.findByNameLower("青云镇")!!.id)
+            .filter { it.action == SyncAction.DELETE_GROUP }
+        assertEquals(3, deletes.size, "旧领地的三个 owned 组都要入队删除")
+        assertTrue(deletes.all { it.dominionId == 42 }, "DELETE_GROUP 必须指向旧领地")
+        assertTrue(deletes.all { it.payload?.contains("\"group_id\"") == true })
+    }
+
     // ---- AC-21 / AC-22 ----
 
     @Test

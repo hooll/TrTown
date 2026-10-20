@@ -261,11 +261,18 @@ class SyncTaskRepository(private val store: Store) {
         return count
     }
 
-    /** 某镇还剩多少 PENDING 任务（解散收尾用，M-5） */
-    fun countPendingByTown(townId: Int): Int {
+    /**
+     * 某镇还有多少**未完成**任务（PENDING 或 DEAD）。
+     *
+     * M-10：DEAD 也必须阻塞解散收尾——否则账本被删、Dominion 里的权限还在，
+     * 且 `admin verify` 再也查不出来。DEAD 由 `admin retry` 复活后继续收尾。
+     */
+    fun countUnfinishedByTown(townId: Int): Int {
         var count = 0
         table.select(ds) {
-            where { ("town_id" eq townId) and ("state" eq SyncState.PENDING.name) }
+            where {
+                ("town_id" eq townId) and (("state" eq SyncState.PENDING.name) or ("state" eq SyncState.DEAD.name))
+            }
         }.forEach { count++ }
         return count
     }

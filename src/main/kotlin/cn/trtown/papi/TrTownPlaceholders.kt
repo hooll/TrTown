@@ -31,17 +31,42 @@ object PlaceholderCache {
 
     private val map = ConcurrentHashMap<UUID, CachedInfo>()
 
+    /** 负缓存：无镇玩家的下次允许查询时间（M-13，60 秒） */
+    private val missingUntil = ConcurrentHashMap<UUID, Long>()
+
+    private const val MISSING_TTL_MS = 60_000L
+
     fun get(uuid: UUID): CachedInfo? = map[uuid]
 
+    /** 缓存未命中时是否允许触发一次异步刷新（负缓存期内返回 false） */
+    fun shouldRefresh(uuid: UUID): Boolean {
+        val until = missingUntil[uuid] ?: return true
+        return System.currentTimeMillis() >= until
+    }
+
+    fun markMissing(uuid: UUID) {
+        map.remove(uuid)
+        missingUntil[uuid] = System.currentTimeMillis() + MISSING_TTL_MS
+    }
+
     fun put(uuid: UUID, info: CachedInfo?) {
-        if (info == null) map.remove(uuid) else map[uuid] = info
+        if (info == null) {
+            markMissing(uuid)
+        } else {
+            missingUntil.remove(uuid)
+            map[uuid] = info
+        }
     }
 
     fun invalidate(uuid: UUID) {
         map.remove(uuid)
+        missingUntil.remove(uuid)
     }
 
-    fun clear() = map.clear()
+    fun clear() {
+        map.clear()
+        missingUntil.clear()
+    }
 
     /** 异步刷新（DB 操作必须在异步线程） */
     fun refreshAsync(uuid: UUID) {
@@ -50,15 +75,15 @@ object PlaceholderCache {
                 val repos = Repos.fromStorage()
                 val member = repos.members.findByUuid(uuid)
                 if (member == null) {
-                    map.remove(uuid)
+                    markMissing(uuid)
                     return@runCatching
                 }
                 val town = repos.towns.findById(member.townId)
                 if (town == null) {
-                    map.remove(uuid)
+                    markMissing(uuid)
                     return@runCatching
                 }
-                map[uuid] = build(town, member.role, PrefixService(repos))
+                put(uuid, build(town, member.role, PrefixService(repos)))
             }
         }
     }
@@ -92,7 +117,8 @@ class TrTownPlaceholders : PlaceholderExpansion() {
         val uuid = player?.uniqueId ?: return ""
         val info = PlaceholderCache.get(uuid)
         if (info == null) {
-            PlaceholderCache.refreshAsync(uuid)
+            // 负缓存期内不再触发查询，避免无镇玩家每条聊天打一次库（M-13）
+            if (PlaceholderCache.shouldRefresh(uuid)) PlaceholderCache.refreshAsync(uuid)
             return ""
         }
         return when (params.lowercase()) {

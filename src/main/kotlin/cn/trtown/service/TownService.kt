@@ -122,7 +122,7 @@ class TownService(
     fun finalizeDisband(townId: Int): Boolean {
         val town = repos.towns.findById(townId) ?: return false
         if (town.state != TownState.DISBANDED) return false
-        if (repos.tasks.countPendingByTown(townId) > 0) return false
+        if (repos.tasks.countUnfinishedByTown(townId) > 0) return false
 
         val hadDominion = town.dominionId != null
         val hadGroups = repos.groups.listByTown(townId).isNotEmpty()

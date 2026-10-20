@@ -24,15 +24,21 @@ import taboolib.common.platform.function.warning
  */
 object Lifecycle {
 
-    /** 任务重试循环 */
+    /** 任务重试循环（M-14：单飞守卫，避免上一轮未跑完时被下一 tick 重复领取） */
     fun startSyncLoop(pollTicks: Long) {
+        val running = java.util.concurrent.atomic.AtomicBoolean(false)
         submitAsync(delay = pollTicks, period = pollTicks) {
-            runCatching {
-                val repos = Repos.fromStorage()
-                val rules = TownRules.fromSettings()
-                val towns = TownService(repos, rules)
-                SyncExecutor(repos, DominionApiGateway(), SyncSettings.fromSettings(), towns).runOnce()
-            }.onFailure { warning("[同步] 执行失败: ${it.javaClass.simpleName}: ${it.message}") }
+            if (!running.compareAndSet(false, true)) return@submitAsync
+            try {
+                runCatching {
+                    val repos = Repos.fromStorage()
+                    val rules = TownRules.fromSettings()
+                    val towns = TownService(repos, rules)
+                    SyncExecutor(repos, DominionApiGateway(), SyncSettings.fromSettings(), towns).runOnce()
+                }.onFailure { warning("[同步] 执行失败: ${it.javaClass.simpleName}: ${it.message}") }
+            } finally {
+                running.set(false)
+            }
         }
     }
 
