@@ -6,3 +6,6 @@ build/
 out/
 .ref/
 .work/
+
+# 临时脚本（规划方用完即回收）
+.tmp_*
