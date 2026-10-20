@@ -95,6 +95,18 @@ class TownRepository(private val store: Store) {
         table.delete(ds) { where("id" eq id) }
     }
 
+    /**
+     * 镇名墓碑（M-6）：解散后把 `name_lower` 改成 `!<id>:<原名小写>`，
+     * 让同名新镇能立刻创建，同时保留 `name` 供审计/历史查询。幂等。
+     */
+    fun tombstoneName(id: Int, name: String) {
+        val tombstone = "!$id:${name.lowercase()}"
+        table.update(ds) {
+            set("name_lower", tombstone)
+            where("id" eq id)
+        }
+    }
+
     private fun ResultSet.toTown() = Town(
         id = getInt("id"),
         name = getString("name"),

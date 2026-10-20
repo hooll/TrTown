@@ -35,6 +35,21 @@ object TestSupport {
 
     fun repos(store: Store): Repos = Repos.from(store)
 
+    /** 单测用：装一份合法的 Dominion 配置（不触碰真实 Dominion 类） */
+    fun installDominionConfig() {
+        cn.trtown.dominion.DominionConfig.install(
+            cn.trtown.dominion.FlagConfig.Validated(
+                effective = mapOf(
+                    TownRole.MEMBER to mapOf("place" to true, "break" to true),
+                    TownRole.MANAGER to mapOf("place" to true, "break" to true, "fly" to true, "admin" to true),
+                    TownRole.MAYOR to mapOf("place" to true, "break" to true, "fly" to true, "admin" to true),
+                ),
+                editable = setOf("fly"),
+                warnings = emptyList(),
+            ),
+        )
+    }
+
     /** 删除本轮测试建出来的临时库 */
     fun cleanup() {
         tempDirs.forEach { runCatching { it.deleteRecursively() } }

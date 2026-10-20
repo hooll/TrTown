@@ -1,0 +1,40 @@
+# TrTown 中文消息
+# 支持 & 颜色码；{0} {1} 为参数占位符
+
+common.player-offline: "&c找不到在线玩家：{0}"
+common.no-permission: "&c你没有权限这么做"
+
+town.create.success: "&a建镇成功：&b{0}"
+town.invite.success: "&a已邀请 &b{0}"
+town.accept.success: "&a已加入小镇：&b{0}"
+town.deny.success: "&7已拒绝 &b{0} &7的邀请"
+town.leave.success: "&7你已退出小镇"
+town.kick.success: "&a已将 &b{0} &a移出小镇"
+town.transfer.success: "&a已将镇长转让给 &b{0}"
+town.setrole.invalid: "&c不支持的阶级：{0}"
+town.setrole.success: "&a已将 &b{0} &a的阶级设为 &b{1}"
+
+town.prefix.success: "&a前缀已更新：{0}"
+town.prefix.reset: "&7前缀已恢复默认（镇名）"
+town.prefix.current: "&7当前前缀：{0} &8(镇名：{1})"
+
+town.territory.bound: "&a已绑定主领地 &7#{0}"
+town.territory.unbound: "&7已解绑主领地"
+
+town.info.line: "&b{0} &7| 成员 {1}/{2} | 领地 {3} | 前缀 {4}"
+town.members.header: "&b{0} &7成员列表（{1}）"
+town.list.header: "&7服务器共有 &b{0} &7个小镇"
+
+town.perm.success: "&a已设置 &b{0} &a的 &b{1} &a为 &b{2}"
+town.perm.reset: "&7已把 &b{0} &7的权限恢复为阶级默认"
+town.perms.header: "&7权限明细（阶级默认 → 个人覆写 → 生效值）："
+
+town.disband.confirm: "&e确定要解散 &b{0} &e吗？10 秒内输入 &b/trtown disband confirm &e确认"
+town.disband.no-confirm: "&c没有待确认的解散操作（或已超时）"
+town.disband.success: "&a小镇已解散"
+
+admin.reload.done: "&a配置已重载并通过校验"
+admin.retry.done: "&a已重置 {0} 个 DEAD 任务"
+admin.verify.ok: "&a{0} 与 Dominion 一致，无差异"
+admin.verify.diff: "&e发现 {0} 处差异："
+admin.force-disband.done: "&a已强制解散 {0}"

@@ -31,7 +31,11 @@ prefix:
   deny-chars: ["%", "{", "}", "[", "]", "§"]   # 命中即拒绝（防 PAPI 递归 / 伪造系统标签）
 
 permissions:
-  allow-override: true              # false = 整个个人权限覆写功能下线（R12 实验不通过时用）
+  # R12 实测结论（2026-10-21，反编译 Dominion 4.9.5 Others#checkPrivilegeFlagSilence）：
+  # 成员一旦属于某个组，Dominion **只看组 flag**，成员个人 flag 被完全忽略；
+  # 个人 flag 只在 member.groupId == -1 时生效。因此"个人权限覆写"在本服**不可用**，
+  # 默认关闭。改成 true 也不会生效，只会让玩家以为设置成功（R18 明确禁止）。
+  allow-override: false
   editable-flags: [teleport, fly, pvp, ignite, hopper, container, chest, door, button, lever,
                    place, break, craft, enchant, pick_up, drop_item]
   aliases:

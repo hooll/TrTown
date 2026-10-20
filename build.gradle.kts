@@ -13,6 +13,7 @@ version = "0.1.0"
 repositories {
     maven("https://repo.tabooproject.org/repository/releases/")
     maven("https://repo.papermc.io/repository/maven-public/")
+    maven("https://repo.extendedclip.com/content/repositories/placeholderapi/")
     maven("https://maven.aliyun.com/repository/central")
     mavenCentral()
 }
@@ -24,7 +25,6 @@ taboolib {
         install(BukkitUI)
         install(Database)
         install(MinecraftChat)
-        install(I18n)
     }
     description {
         name = "TrTown"
@@ -41,6 +41,7 @@ taboolib {
 dependencies {
     compileOnly("dev.folia:folia-api:26.3.build.3-alpha")
     compileOnly("cn.lunadeer:DominionAPI:4.9.6")
+    compileOnly("me.clip:placeholderapi:2.12.3")
     compileOnly(kotlin("stdlib"))
 
     testImplementation(kotlin("test"))
@@ -72,5 +73,20 @@ tasks.test {
     useJUnitPlatform()
     testLogging {
         events("passed", "failed", "skipped")
+    }
+}
+
+/** AC-25 性能基准：只跑 @Tag("perf") 的用例 */
+tasks.register<Test>("perfTest") {
+    description = "PAPI 变量性能基准（AC-25）"
+    group = "verification"
+    useJUnitPlatform {
+        includeTags("perf")
+    }
+    testClassesDirs = sourceSets["test"].output.classesDirs
+    classpath = sourceSets["test"].runtimeClasspath
+    testLogging {
+        events("passed", "failed")
+        showStandardStreams = true
     }
 }

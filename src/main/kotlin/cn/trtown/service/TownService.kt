@@ -55,7 +55,7 @@ class TownService(
         if (target == actor) throw TownException(TownError.CANNOT_TARGET_SELF)
         val targetMember = repos.members.find(town.id, target)
             ?: throw TownException(TownError.TARGET_NOT_MEMBER)
-        if (targetMember.role == TownRole.MAYOR) throw TownException(TownError.CANNOT_TARGET_SELF)
+        if (targetMember.role == TownRole.MAYOR) throw TownException(TownError.CANNOT_TARGET_MAYOR)
 
         repos.members.updateRole(town.id, target, role)
         enqueue(town, SyncAction.MOVE_GROUP, target)
@@ -92,19 +92,47 @@ class TownService(
         if (actorMember.role != TownRole.MAYOR) throw TownException(TownError.NOT_MAYOR)
 
         val now = clock()
-        val members = repos.members.listByTown(town.id)
-        members.forEach { member ->
+        // M-6：名字立刻墓碑化，同名新镇可以马上建
+        repos.towns.tombstoneName(town.id, town.name)
+        // 成员逐个 REVOKE 后删成员行
+        repos.members.listByTown(town.id).forEach { member ->
             enqueue(town, SyncAction.REVOKE, member.uuid)
             repos.members.delete(town.id, member.uuid)
         }
-        repos.groups.listByTown(town.id).forEach { group ->
-            if (group.owned) enqueue(town, SyncAction.DELETE_GROUP, null)
+        // M-9：DELETE_GROUP 必须带 group_id；组行保留到收尾时再删
+        repos.groups.listByTown(town.id).filter { it.owned }.forEach { group ->
+            enqueue(
+                town, SyncAction.DELETE_GROUP, null,
+                payload = "{\"group_id\":${group.groupId},\"group_name\":\"${group.groupName}\"}",
+            )
         }
-        repos.groups.deleteByTown(town.id)
         repos.invites.deleteByTown(town.id)
         repos.towns.updateState(town.id, TownState.DISBANDED)
         repos.audit.append(actor, town.id, "disband", town.name, now)
+        // 没有绑定领地 → 没有同步任务 → 立即收尾
+        if (town.dominionId == null) finalizeDisband(town.id)
         return town.copy(state = TownState.DISBANDED)
+    }
+
+    /**
+     * 解散收尾（M-5）：等该镇所有同步任务 DONE 后，清 `dominion_id`、删 grants、删组行。
+     *
+     * 幂等、可重启重跑：重复调用只会做剩下的部分。返回 true 表示已收尾。
+     */
+    fun finalizeDisband(townId: Int): Boolean {
+        val town = repos.towns.findById(townId) ?: return false
+        if (town.state != TownState.DISBANDED) return false
+        if (repos.tasks.countPendingByTown(townId) > 0) return false
+
+        val hadDominion = town.dominionId != null
+        val hadGroups = repos.groups.listByTown(townId).isNotEmpty()
+        if (!hadDominion && !hadGroups) return true
+
+        repos.grants.deleteByTown(townId)
+        if (hadDominion) repos.towns.updateDominion(townId, null)
+        repos.groups.deleteByTown(townId)
+        repos.audit.append(null, townId, "disband-finalized", "dominion=${town.dominionId}", clock())
+        return true
     }
 
     // ---- 供其他服务与命令层复用 ----
@@ -120,9 +148,9 @@ class TownService(
 
     fun townOf(uuid: UUID): Town? = repos.members.findByUuid(uuid)?.let { repos.towns.findById(it.townId) }
 
-    /** 只有绑定了主领地才入队同步任务（I5 由执行器保证，S3） */
-    private fun enqueue(town: Town, action: SyncAction, target: UUID?) {
+    /** 只有绑定了主领地才入队同步任务（I5 由执行器保证） */
+    private fun enqueue(town: Town, action: SyncAction, target: UUID?, payload: String? = null) {
         val dominionId = town.dominionId ?: return
-        repos.tasks.enqueue(town.id, dominionId, action, target, null, clock())
+        repos.tasks.enqueue(town.id, dominionId, action, target, payload, clock())
     }
 }

@@ -261,6 +261,15 @@ class SyncTaskRepository(private val store: Store) {
         return count
     }
 
+    /** 某镇还剩多少 PENDING 任务（解散收尾用，M-5） */
+    fun countPendingByTown(townId: Int): Int {
+        var count = 0
+        table.select(ds) {
+            where { ("town_id" eq townId) and ("state" eq SyncState.PENDING.name) }
+        }.forEach { count++ }
+        return count
+    }
+
     fun listByTown(townId: Int): List<SyncTask> =
         table.select(ds) { where("town_id" eq townId) }.map { toTask() }
 

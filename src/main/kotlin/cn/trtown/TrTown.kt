@@ -1,10 +1,20 @@
 package cn.trtown
 
+import cn.trtown.command.TownCommand
+import cn.trtown.dominion.ConfigException
+import cn.trtown.dominion.DominionConfig
+import cn.trtown.dominion.FlagConfig
+import cn.trtown.model.TownRole
+import cn.trtown.papi.TrTownPlaceholders
+import cn.trtown.platform.Lifecycle
 import cn.trtown.platform.PlatformScheduler
+import cn.trtown.service.Repos
 import cn.trtown.store.Storage
+import org.bukkit.Bukkit
 import taboolib.common.platform.Plugin
 import taboolib.common.platform.function.info
 import taboolib.common.platform.function.severe
+import taboolib.common.platform.function.warning
 import taboolib.platform.BukkitPlugin
 
 /** 插件版本，与 gradle.properties 中的 version 保持一致 */
@@ -24,12 +34,43 @@ object TrTown : Plugin() {
 
     override fun onEnable() {
         info("TrTown v$VERSION 已启用")
-        TrTownCommand.register()
+
+        // M-3：权限配置校验，任何一条不合法都拒绝启用（避免"配了但没生效"的静默事故）
+        try {
+            val validated = FlagConfig.validate()
+            DominionConfig.install(validated)
+            validated.warnings.forEach { warning("[配置] $it") }
+            info(
+                "权限配置校验通过：MEMBER ${validated.effective[TownRole.MEMBER]?.size ?: 0} 项 / " +
+                    "MANAGER ${validated.effective[TownRole.MANAGER]?.size ?: 0} 项 / " +
+                    "MAYOR ${validated.effective[TownRole.MAYOR]?.size ?: 0} 项，可覆写 ${validated.editable.size} 项",
+            )
+        } catch (ex: ConfigException) {
+            severe("配置校验失败，TrTown 不启用：${ex.message}")
+            throw ex
+        }
+
+        // AC-27：风险必须看得见
+        warning("管理拥有领地大小 / 改名 / 子领地操作权，且 Dominion 无撤销——管理只给信得过的人")
+
+        TownCommand.register()
+        Lifecycle.registerListener()
+
         // 建池 + 建表必须异步：submitAsync(now = true) 会在调用线程同步执行（AC-29）
         PlatformScheduler.runAsync(delayTicks = 1) {
             runCatching { Storage.init(BukkitPlugin.getInstance().dataFolder) }
                 .onSuccess {
                     info("存储就绪：${it.dialect}，共 ${it.tables.all.size} 张表")
+                    // 两个常驻任务（PLAN §5.13 上限 2 个）
+                    Lifecycle.startSyncLoop(cn.trtown.Settings.syncPollTicks)
+                    Lifecycle.startInviteCleanup()
+                    // 启动恢复：把 PENDING 任务拉到现在
+                    Repos.fromStorage().tasks.wakeAllPending()
+                    // PAPI 扩展（软依赖）
+                    if (Bukkit.getPluginManager().getPlugin("PlaceholderAPI") != null) {
+                        TrTownPlaceholders().register()
+                        info("PlaceholderAPI 扩展已注册：%trtown_prefix% 等 5 个变量")
+                    }
                 }
                 .onFailure {
                     severe("存储初始化失败：${it.javaClass.simpleName}: ${it.message}")
