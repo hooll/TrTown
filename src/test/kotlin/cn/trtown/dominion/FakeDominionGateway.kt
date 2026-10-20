@@ -65,7 +65,7 @@ class FakeDominionGateway : DominionGateway {
     }
 
     override fun ensureGroup(ref: DominionRef, role: TownRole, name: String, flags: Map<String, Boolean>): GroupRef {
-        record("ensureGroup", ref.id, role, name)
+        record("ensureGroup", ref.id, role, name, flags)
         val map = groups.getOrPut(ref.id) { mutableMapOf() }
         return map[name] ?: GroupRef(nextGroupId++, name, true).also { map[name] = it }
     }

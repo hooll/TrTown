@@ -11,23 +11,24 @@ import java.util.concurrent.atomic.AtomicInteger
  */
 object ThreadGuard {
 
-    private val mainMarker = ThreadLocal.withInitial { false }
+    private val mainDepth = ThreadLocal.withInitial { 0 }
     private val mainCalls = AtomicInteger()
     private val asyncCalls = AtomicInteger()
 
     fun enterMain() {
-        mainMarker.set(true)
+        mainDepth.set(mainDepth.get() + 1)
     }
 
     fun exitMain() {
-        mainMarker.remove()
+        val depth = mainDepth.get()
+        if (depth <= 1) mainDepth.remove() else mainDepth.set(depth - 1)
     }
 
-    fun isMain(): Boolean = mainMarker.get()
+    fun isMain(): Boolean = mainDepth.get() > 0
 
     /** 每次取数据库连接时调用 */
     fun onDbAccess() {
-        if (mainMarker.get()) {
+        if (mainDepth.get() > 0) {
             mainCalls.incrementAndGet()
             throw IllegalStateException("禁止在主线程访问数据库（AC-24）")
         }
