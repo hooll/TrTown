@@ -17,8 +17,16 @@ enum class TownState { ACTIVE, DISBANDED }
 /** 邀请状态 */
 enum class InviteStatus { PENDING, ACCEPTED, DECLINED, EXPIRED, REVOKED }
 
-/** 同步任务动作 */
-enum class SyncAction { GRANT, REVOKE, MOVE_GROUP, ENSURE_GROUP, DELETE_GROUP, SET_MEMBER_FLAG }
+/**
+ * 同步任务动作。
+ *
+ * v1.25 起只产生前四个（Dominion 原生成员模型）；后六个是历史任务，
+ * 执行器保留解析，避免升级后库里旧行把轮询卡死。
+ */
+enum class SyncAction {
+    MEMBER_ADD, MEMBER_FLAGS, MEMBER_REMOVE, TRANSFER_DOMINION,
+    GRANT, REVOKE, MOVE_GROUP, ENSURE_GROUP, DELETE_GROUP, SET_MEMBER_FLAG,
+}
 
 /** 同步任务状态 */
 enum class SyncState { PENDING, DONE, DEAD }
@@ -45,15 +53,6 @@ data class Member(
     val role: TownRole,
     val perms: Map<String, Boolean>,
     val joinedAt: Long,
-)
-
-/** 本镇在 Dominion 里的阶级组（`owned=true` 表示由本插件创建、可删） */
-data class TownGroup(
-    val townId: Int,
-    val role: TownRole,
-    val groupId: Int,
-    val groupName: String,
-    val owned: Boolean,
 )
 
 /** 邀请 */

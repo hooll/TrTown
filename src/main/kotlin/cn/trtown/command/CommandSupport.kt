@@ -2,14 +2,12 @@ package cn.trtown.command
 
 import cn.trtown.Settings
 import cn.trtown.dominion.DominionApiGateway
-import cn.trtown.dominion.DominionConfig
 import cn.trtown.model.Invite
 import cn.trtown.platform.Players
 import cn.trtown.service.InviteChoice
 import cn.trtown.service.InviteService
 import cn.trtown.service.MembershipService
 import cn.trtown.service.PendingInvite
-import cn.trtown.service.PermissionService
 import cn.trtown.service.PrefixService
 import cn.trtown.service.Repos
 import cn.trtown.service.TerritoryService
@@ -40,16 +38,9 @@ internal object Cmds {
     fun membership(): MembershipService = MembershipService(repos())
 
     fun territory(): TerritoryService =
-        TerritoryService(repos(), DominionApiGateway(), towns(), Settings.groupNameFormat)
+        TerritoryService(repos(), DominionApiGateway(), towns())
 
     fun prefix(): PrefixService = PrefixService(repos())
-
-    fun permission(): PermissionService = PermissionService(
-        repos(),
-        Settings.allowOverride,
-        DominionConfig.current.editable.toSet(),
-        Settings.flagAliases,
-    )
 
     /** 玩家名 → UUID；不在线返回 null */
     fun player(name: String): UUID? = Players.find(name)
@@ -76,8 +67,10 @@ internal object Cmds {
 
     fun doSetTerritory(sender: ProxyCommandSender, name: String?) {
         Cmd.player(sender) { player ->
+            // 位置必须在玩家自己的 region 线程上取；Cmd.run 之后就是异步线程了（Folia 纪律）
+            val at = Players.positionOf(player)
             Cmd.run(sender) {
-                val town = territory().setterritory(player.uniqueId, name)
+                val town = territory().setterritory(player.uniqueId, name, at)
                 Cmd.replyKey(sender, "town.territory.bound", town.dominionId ?: 0)
             }
         }
@@ -97,22 +90,55 @@ internal object Cmds {
         }
     }
 
+    /** `/tt perms`：展示当前角色在 Dominion 里的 flag 实况（v1.25 保留只读展示） */
     fun doPerms(sender: ProxyCommandSender, playerName: String?) {
         Cmd.player(sender) { player ->
             val target = playerName?.let { player(it) } ?: player.uniqueId
             Cmd.run(sender) {
-                val rows = permission().describe(target)
-                Cmd.replyKey(sender, "town.perms.header")
-                rows.forEach { (flag, base, effective) ->
-                    Cmd.reply(sender, "§7- §f$flag §8默认=$base §7生效=$effective")
+                val rows = territory().describeFlags(target)
+                Cmd.replyKey(sender, "town.perms.flags-header")
+                rows.forEach { row ->
+                    Cmd.reply(
+                        sender,
+                        "§7- §f${row.flag} §8角色应有=${row.expected} §7Dominion 实际=${row.actual ?: "未绑定"}",
+                    )
                 }
             }
         }
     }
 
-    /** `perm` 缺参的统一用法提示（M-22：perm / player / flag 三层共用，禁止文案漂移） */
-    fun usagePerm(sender: ProxyCommandSender) {
-        Cmd.reply(sender, "§c用法：/trtown perm <玩家> <flag> <on|off|reset>")
+    /**
+     * `/tt transfer <玩家> [confirm]`（PLAN §5.16.7）。
+     *
+     * 未绑定主领地 → 直接转让（保持旧行为）；已绑定 → 第一次只出确认提示、零写入，
+     * 10 秒内带 `confirm` 才真正落库并排 `TRANSFER_DOMINION`。
+     */
+    fun doTransfer(sender: ProxyCommandSender, targetName: String, confirmed: Boolean) {
+        Cmd.player(sender) { player ->
+            val target = player(targetName) ?: return@player Cmd.replyKey(sender, "common.player-offline", targetName)
+            Cmd.run(sender) {
+                val preview = towns().previewTransfer(player.uniqueId, target)
+                val dominionId = preview.dominionId
+                if (dominionId == null) {
+                    // 未绑定领地：没有"领地跟着走"的问题，保持旧的一次确认行为
+                    towns().transfer(player.uniqueId, target)
+                    Cmd.replyKey(sender, "town.transfer.success", targetName)
+                    return@run
+                }
+                if (!confirmed) {
+                    TransferConfirm.request(player.uniqueId, target)
+                    val dominionName = territory().dominionName(dominionId)
+                    Cmd.replyKey(sender, "town.transfer.confirm", preview.town.name, dominionName, targetName)
+                    return@run
+                }
+                if (!TransferConfirm.consume(player.uniqueId, target)) {
+                    Cmd.replyKey(sender, "town.transfer.no-confirm")
+                    return@run
+                }
+                towns().transfer(player.uniqueId, target)
+                Cmd.replyKey(sender, "town.transfer.success", targetName)
+            }
+        }
     }
 
     // ---- 邀请处理（PLAN §5.15 / M-25；无参时自动选唯一一条，≥2 绝不自动选 —— R30） ----
@@ -176,16 +202,18 @@ internal object Cmds {
     private val HELP_LINES = listOf(
         "§b§lTrTown §7帮助",
         "§7/trtown create <镇名> §8- 建镇",
-        "§7/trtown invite|kick|transfer|setrole <玩家> §8- 成员管理",
+        "§7/trtown invite|kick|setrole <玩家> §8- 成员管理",
+        "§7/trtown transfer <玩家> [confirm] §8- 转让镇长（已绑领地时需二次确认，领地一起转）",
         "§7/trtown accept|deny [镇名] §8- 处理邀请（不带镇名＝只有一条时直接处理）",
         "§7/trtown leave §8- 退出小镇（镇长需先转让）",
         "§7/trtown setprefix <文本> §8- 改前缀（管理/镇长）",
-        "§7/trtown setterritory [领地] | unsetterritory §8- 绑定/解绑主领地（镇长）",
+        "§7/trtown setterritory [领地] | unsetterritory §8- 绑定/解绑主领地（无参＝脚下领地）",
         "§7/trtown info [镇名] | members | list §8- 查看",
-        "§7/trtown perm|perms [玩家] ... §8- 个人权限（本服默认关闭）",
+        "§7/trtown perms [玩家] §8- 查看角色在 Dominion 里的 flag 实况",
         "§7/trtown disband [confirm] §8- 解散（镇长）",
         "§7/trtown admin reload|retry|verify|force-disband §8- 运维",
         "§c管理拥有领地大小/改名/子领地操作权，且 Dominion 无撤销——管理只给信得过的人",
+        "§c在 Dominion GUI 里转让主领地会被拦截：请用 /trtown transfer 同时转让小镇",
     )
 
     /** 解散二次确认（10 秒内有效） */
@@ -199,6 +227,25 @@ internal object Cmds {
         fun consume(uuid: UUID): Boolean {
             val ts = pending.remove(uuid) ?: return false
             return System.currentTimeMillis() - ts <= Settings.disbandConfirmSeconds * 1000L
+        }
+    }
+
+    /**
+     * 领地转让二次确认（PLAN §5.16.7）。
+     *
+     * 键是 `(操作者, 目标)`：确认必须针对同一个人，否则 `/tt transfer B` 之后
+     * `/tt transfer C confirm` 会把镇转给 C。
+     */
+    object TransferConfirm {
+        private val pending = mutableMapOf<Pair<UUID, UUID>, Long>()
+
+        fun request(actor: UUID, target: UUID) {
+            pending[actor to target] = System.currentTimeMillis()
+        }
+
+        fun consume(actor: UUID, target: UUID): Boolean {
+            val ts = pending.remove(actor to target) ?: return false
+            return System.currentTimeMillis() - ts <= Settings.transferConfirmSeconds * 1000L
         }
     }
 }

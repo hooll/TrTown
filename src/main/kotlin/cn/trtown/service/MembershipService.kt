@@ -52,6 +52,6 @@ class MembershipService(
 
     private fun enqueue(town: Town, target: UUID) {
         val dominionId = town.dominionId ?: return
-        repos.tasks.enqueue(town.id, dominionId, SyncAction.REVOKE, target, null, clock())
+        repos.tasks.enqueue(town.id, dominionId, SyncAction.MEMBER_REMOVE, target, null, clock())
     }
 }

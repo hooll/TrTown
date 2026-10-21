@@ -1,5 +1,6 @@
 package cn.trtown.service
 
+import cn.trtown.dominion.DominionBindings
 import cn.trtown.model.Member
 import cn.trtown.model.SyncAction
 import cn.trtown.model.SyncState
@@ -64,37 +65,51 @@ class TownService(
         if (targetMember.role == TownRole.MAYOR) throw TownException(TownError.CANNOT_TARGET_MAYOR)
 
         repos.members.updateRole(town.id, target, role)
-        enqueue(town, SyncAction.MOVE_GROUP, target)
+        enqueue(town, SyncAction.MEMBER_FLAGS, target)
         repos.audit.append(actor, town.id, "setrole", "$target -> ${role.name}", clock())
         CacheHooks.invalidate(target)
         return targetMember.copy(role = role)
     }
 
+    /** 转让预览（PLAN §5.16.7）：只校验，不写库；命令层据此决定要不要二次确认 */
+    data class TransferPreview(val town: Town, val dominionId: Int?)
+
+    fun previewTransfer(actor: UUID, target: UUID): TransferPreview {
+        val (town, _) = validateTransfer(actor, target)
+        return TransferPreview(town, town.dominionId)
+    }
+
     /** 转让镇长：目标升 MAYOR，原镇长降为 `town.transfer-demote-to` */
     fun transfer(actor: UUID, target: UUID): Town {
-        val actorMember = requireMember(actor)
-        val town = requireActiveTown(actorMember.townId)
-        if (actorMember.role != TownRole.MAYOR) throw TownException(TownError.NOT_MAYOR)
-        if (target == actor) throw TownException(TownError.CANNOT_TARGET_SELF)
-        val targetMember = repos.members.find(town.id, target)
-            ?: throw TownException(TownError.TARGET_NOT_MEMBER)
-
+        val (town, targetMember) = validateTransfer(actor, target)
         val demoteTo = if (rules.transferDemoteTo == TownRole.MAYOR) TownRole.MEMBER else rules.transferDemoteTo
+
         repos.members.updateRole(town.id, target, TownRole.MAYOR)
         repos.members.updateRole(town.id, actor, demoteTo)
         repos.towns.updateOwner(town.id, target)
-        enqueue(town, SyncAction.MOVE_GROUP, target)
-        enqueue(town, SyncAction.MOVE_GROUP, actor)
-        repos.audit.append(actor, town.id, "transfer", "$actor -> $target", clock())
+        // 已绑定主领地：领地所有权必须跟着走（PLAN §5.16.7 第 5 条）。
+        // TrTown 先落库、Dominion 后调；任务失败则 DEAD + 告警，不回滚 TrTown。
+        town.dominionId?.let { enqueue(town, SyncAction.TRANSFER_DOMINION, target) }
+        repos.audit.append(actor, town.id, "transfer", "$actor -> $target (${targetMember.role.name} → MAYOR)", clock())
         CacheHooks.invalidate(target)
         CacheHooks.invalidate(actor)
         SuggestHooks.townsChanged()
         return repos.towns.findById(town.id) ?: town.copy(ownerUuid = target)
     }
 
+    private fun validateTransfer(actor: UUID, target: UUID): Pair<Town, Member> {
+        val actorMember = requireMember(actor)
+        val town = requireActiveTown(actorMember.townId)
+        if (actorMember.role != TownRole.MAYOR) throw TownException(TownError.NOT_MAYOR)
+        if (target == actor) throw TownException(TownError.CANNOT_TARGET_SELF)
+        val targetMember = repos.members.find(town.id, target)
+            ?: throw TownException(TownError.TARGET_NOT_MEMBER)
+        return town to targetMember
+    }
+
     /**
-     * 解散：成员逐个 REVOKE、本插件创建的组逐个 DELETE_GROUP，然后置 DISBANDED。
-     * 组与账本行保留到执行器处理完（S3），这里只入队。
+     * 解散：成员逐个 `MEMBER_REMOVE`，然后置 DISBANDED。
+     * 成员行立刻删除；同步任务靠"镇已解散"放行移除（见 `SyncExecutor.memberRemove`）。
      */
     fun disband(actor: UUID): Town {
         val actorMember = requireMember(actor)
@@ -104,18 +119,11 @@ class TownService(
         val now = clock()
         // M-6：名字立刻墓碑化，同名新镇可以马上建
         repos.towns.tombstoneName(town.id, town.name)
-        // 成员逐个 REVOKE 后删成员行
+        // 成员逐个 MEMBER_REMOVE 后删成员行
         val disbanded = repos.members.listByTown(town.id)
         disbanded.forEach { member ->
-            enqueue(town, SyncAction.REVOKE, member.uuid)
+            enqueue(town, SyncAction.MEMBER_REMOVE, member.uuid)
             repos.members.delete(town.id, member.uuid)
-        }
-        // M-9：DELETE_GROUP 必须带 group_id；组行保留到收尾时再删
-        repos.groups.listByTown(town.id).filter { it.owned }.forEach { group ->
-            enqueue(
-                town, SyncAction.DELETE_GROUP, null,
-                payload = "{\"group_id\":${group.groupId},\"group_name\":\"${group.groupName}\"}",
-            )
         }
         repos.invites.deleteByTown(town.id)
         repos.towns.updateState(town.id, TownState.DISBANDED)
@@ -129,7 +137,7 @@ class TownService(
     }
 
     /**
-     * 解散收尾（M-5）：等该镇所有**还会再跑**的同步任务（PENDING）结束后，清 `dominion_id`、删 grants、删组行。
+     * 解散收尾（M-5）：等该镇所有**还会再跑**的同步任务（PENDING）结束后，清 `dominion_id`、删 grants。
      *
      * 幂等、可重启重跑：重复调用只会做剩下的部分。返回 true 表示已收尾。
      *
@@ -152,13 +160,14 @@ class TownService(
         }
 
         val hadDominion = town.dominionId != null
-        val hadGroups = repos.groups.listByTown(townId).isNotEmpty()
         val hadMembers = repos.members.countByTown(townId) > 0
-        if (!hadDominion && !hadGroups && !hadMembers) return true
+        if (!hadDominion && !hadMembers) return true
 
         repos.grants.deleteByTown(townId)
-        if (hadDominion) repos.towns.updateDominion(townId, null)
-        repos.groups.deleteByTown(townId)
+        if (hadDominion) {
+            repos.towns.updateDominion(townId, null)
+            DominionBindings.remove(town.dominionId)
+        }
         // M-35：成员行也必须清。留着的话玩家会变成"已解散小镇的镇长"：
         // /tt leave 要求先转让、没有第二个人可转、/tt create 说已在镇里、/tt setterritory 说镇已解散 ——
         // 四条路全堵，只能管理员改库。

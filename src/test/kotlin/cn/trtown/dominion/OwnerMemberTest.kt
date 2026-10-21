@@ -2,8 +2,6 @@ package cn.trtown.dominion
 
 import cn.trtown.model.SyncAction
 import cn.trtown.model.SyncState
-import cn.trtown.model.TownRole
-import cn.trtown.service.InviteService
 import cn.trtown.service.Repos
 import cn.trtown.service.TerritoryService
 import cn.trtown.service.TestSupport
@@ -18,28 +16,25 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 /**
- * M-30：Dominion 的 **owner 不是 member**，也不能被加进组。
+ * M-30：Dominion 的 **owner 不是 member**，也不能被加进成员表。
  *
  * 真服日志：`[Dominion] Failed to add member, reason: You can't add dominion owner as a member.`
- * → `member.addMember 返回 null` → 任务以 `attempts=3` 仍 `PENDING`，**永远不可能成功**。
+ * → 任务以 `attempts=3` 仍 `PENDING`，**永远不可能成功**。
  *
- * 三个层面都要拦住：
- * 1. 绑定时不排（`TerritoryService`）；
- * 2. 已经排了的老任务要能收尾，不能永久重试（`SyncExecutor.grant`）；
- * 3. 转让镇长后原镇长（仍是领地 owner）降级产生的 MOVE_GROUP 同理（`SyncExecutor.moveGroup`）。
+ * v1.25 后新任务叫 `MEMBER_ADD`，语义不变：镇长（owner）永远不排成员任务。
  */
 class OwnerMemberTest {
 
     private lateinit var store: Store
     private lateinit var repos: Repos
     private lateinit var towns: TownService
-    private lateinit var invites: InviteService
     private lateinit var fake: FakeDominionGateway
     private lateinit var territory: TerritoryService
     private lateinit var executor: SyncExecutor
     private var now = 1_000L
 
     private val dominionId = 42
+    private val pos = BlockPosition(UUID.randomUUID(), 0.0, 64.0, 0.0)
 
     @BeforeEach
     fun setUp() {
@@ -47,29 +42,25 @@ class OwnerMemberTest {
         store = TestSupport.store()
         repos = TestSupport.repos(store)
         towns = TownService(repos, TestSupport.rules) { now }
-        invites = InviteService(repos, TestSupport.rules) { now }
         fake = FakeDominionGateway()
-        territory = TerritoryService(repos, fake, towns, TestSupport.rules.groupNameFormat) { now }
-        executor = SyncExecutor(
-            repos, fake,
-            SyncSettings(maxAttempts = 5, backoffSeconds = listOf(5L, 30L), groupNameFormat = "TrTown_%s_%s"),
-            towns,
-        ) { now }
+        territory = TerritoryService(repos, fake, towns) { now }
+        executor = SyncExecutor(repos, fake, SyncSettings(5, listOf(5L, 30L)), towns) { now }
     }
 
     @AfterEach
     fun tearDown() = TestSupport.cleanup()
 
     @Test
-    fun `M-30 绑定领地时不为 owner 排 GRANT 任务`() {
+    fun `M-30 绑定领地时不为 owner 排 MEMBER_ADD 任务`() {
         val owner = UUID.randomUUID()
         val town = towns.create(owner, "青云镇")
         fake.addDominion(DominionRef(dominionId, owner, "TestLand"))
+        fake.setAt(DominionRef(dominionId, owner, "TestLand"))
 
-        territory.setterritory(owner, "TestLand")
+        territory.setterritory(owner, null, pos)
 
-        val grants = repos.tasks.listByTown(town.id).filter { it.action == SyncAction.GRANT }
-        assertTrue(grants.none { it.targetUuid == owner }, "镇长就是领地 owner，不该给他排 GRANT：$grants")
+        val tasks = repos.tasks.listByTown(town.id)
+        assertTrue(tasks.none { it.targetUuid == owner }, "镇长就是领地 owner，不该给他排任务：$tasks")
     }
 
     @Test
@@ -86,37 +77,6 @@ class OwnerMemberTest {
         val task = assertNotNull(repos.tasks.listByTown(town.id).singleOrNull())
         assertEquals(SyncState.DONE, task.state, "指向 owner 的 GRANT 必须一次收尾，不能留在 PENDING：${task.lastError}")
         assertEquals(0, fake.countOf("ensureMember"), "根本不该去调 Dominion 的 addMember")
-        assertEquals(0, fake.countOf("putInGroup"))
-
-        // 留一条零副作用账本，避免 selfHeal 每次入服都重新排这条任务
-        val ledger = repos.grants.find(town.id, dominionId, owner)
-        assertNotNull(ledger, "应记录一条『什么都没做』的账本行")
-        assertEquals(false, ledger.memberAdded)
-        assertEquals(false, ledger.groupAdded)
-    }
-
-    @Test
-    fun `M-30 转让镇长后原镇长（领地 owner）的 MOVE_GROUP 不会永久重试`() {
-        val owner = UUID.randomUUID()
-        val town = towns.create(owner, "青云镇")
-        repos.towns.updateDominion(town.id, dominionId)
-        fake.addDominion(DominionRef(dominionId, owner, "TestLand"))
-
-        val heir = UUID.randomUUID()
-        invites.invite(owner, heir)
-        invites.accept(heir, town.id)
-        towns.setrole(owner, heir, TownRole.MANAGER)
-
-        // 清掉之前所有任务，只留转让产生的那批
-        repos.tasks.listByTown(town.id).forEach { repos.tasks.markDone(it.id, now) }
-        towns.transfer(owner, heir)
-
-        executor.runOnce()
-
-        val unfinished = repos.tasks.listByTown(town.id).filter { it.state == SyncState.PENDING }
-        assertTrue(
-            unfinished.none { it.targetUuid == owner },
-            "原镇长仍是领地 owner，指向他的任务必须一次收尾：$unfinished",
-        )
+        assertEquals(0, fake.countOf("setMemberFlag"))
     }
 }

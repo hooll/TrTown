@@ -2,7 +2,6 @@ package cn.trtown.service
 
 import cn.trtown.store.AuditRepository
 import cn.trtown.store.GrantRepository
-import cn.trtown.store.GroupRepository
 import cn.trtown.store.InviteRepository
 import cn.trtown.store.MemberRepository
 import cn.trtown.store.Storage
@@ -13,7 +12,6 @@ import cn.trtown.store.TownRepository
 class Repos(
     val towns: TownRepository,
     val members: MemberRepository,
-    val groups: GroupRepository,
     val invites: InviteRepository,
     val grants: GrantRepository,
     val tasks: SyncTaskRepository,
@@ -24,7 +22,6 @@ class Repos(
         fun from(store: cn.trtown.store.Store): Repos = Repos(
             TownRepository(store),
             MemberRepository(store),
-            GroupRepository(store),
             InviteRepository(store),
             GrantRepository(store),
             SyncTaskRepository(store),

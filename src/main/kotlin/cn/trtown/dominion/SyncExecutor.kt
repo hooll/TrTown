@@ -1,11 +1,9 @@
 package cn.trtown.dominion
 
-import cn.trtown.model.Grant
-import cn.trtown.model.Member
-import cn.trtown.model.PermsJson
 import cn.trtown.model.SyncAction
 import cn.trtown.model.SyncTask
-import cn.trtown.model.TownGroup
+import cn.trtown.model.TownRole
+import cn.trtown.model.TownState
 import cn.trtown.service.Repos
 import cn.trtown.service.TownService
 import java.util.UUID
@@ -13,13 +11,17 @@ import java.util.UUID
 /**
  * 同步执行器：消费 `trtown_sync_tasks`，调用 [DominionGateway] 施加/撤销权限。
  *
- * 设计要点（PLAN §5.4 / §5.9）：
- * - 先有任务行再执行（I5）；
- * - 每个动作幂等，重跑不改变结果；
- * - 失败按退避重试，超过上限置 DEAD；
- * - 任务成功后如果该镇已解散且任务清空，触发解散收尾（M-5）。
+ * v1.25（PLAN §5.16）：Dominion 侧不再有组。新任务只有四种：
+ * - `MEMBER_ADD`：只 `addMember`（MEMBER 预设为空时一个 flag 都不设）；
+ * - `MEMBER_FLAGS`：按当前角色把全部 managed flag 设成期望值（含降级时设回 false）；
+ * - `MEMBER_REMOVE`：`removeMember`；
+ * - `TRANSFER_DOMINION`：`setOwner` + 成员表换位（新 owner 退出成员表、原镇长降级入表）。
  *
- * 同步阻塞，调用方必须在异步线程执行。
+ * 旧动作（`GRANT` / `REVOKE` / `MOVE_GROUP` / `SET_MEMBER_FLAG`）保留解析并映射到新语义；
+ * `ENSURE_GROUP` / `DELETE_GROUP` 是组模型的遗留，直接收尾（表已不再使用）。
+ *
+ * 设计要点：先有任务行再执行（I5）；每个动作幂等；失败按退避重试，超过上限置 DEAD；
+ * 任务成功后如果该镇已解散且任务清空，触发解散收尾（M-5）。
  */
 class SyncExecutor(
     private val repos: Repos,
@@ -47,8 +49,6 @@ class SyncExecutor(
      * 放在轮询里而不是新开常驻任务（PLAN §5.13 上限 2 个）。**M-33**：不必每秒扫一次 ——
      * 轮询是 1 s 一次，而 `DISBANDED` 的行永不删除、会长期累积，每秒把全表装配成 `Town` 对象只为筛掉 99% 不划算。
      * 30 s 一次足够（收尾本身幂等，晚半分钟没有任何业务影响）。
-     *
-     * 计数放在 companion：`Lifecycle` 每轮都会 `new SyncExecutor(...)`，实例字段活不过一秒。
      */
     private fun sweepDisbanded() {
         val now = clock()
@@ -63,12 +63,13 @@ class SyncExecutor(
     fun execute(task: SyncTask) {
         try {
             when (task.action) {
-                SyncAction.GRANT -> grant(task)
-                SyncAction.REVOKE -> revoke(task)
-                SyncAction.MOVE_GROUP -> moveGroup(task)
-                SyncAction.ENSURE_GROUP -> ensureGroups(task)
-                SyncAction.DELETE_GROUP -> deleteGroup(task)
+                SyncAction.MEMBER_ADD, SyncAction.GRANT -> memberAdd(task)
+                SyncAction.MEMBER_FLAGS, SyncAction.MOVE_GROUP -> applyMemberFlags(task)
+                SyncAction.MEMBER_REMOVE, SyncAction.REVOKE -> memberRemove(task)
                 SyncAction.SET_MEMBER_FLAG -> setMemberFlag(task)
+                SyncAction.TRANSFER_DOMINION -> transferDominion(task)
+                // 组模型遗留：表还在，但新代码不再读写；旧行直接收尾，避免永久 PENDING
+                SyncAction.ENSURE_GROUP, SyncAction.DELETE_GROUP -> Unit
             }
             repos.tasks.markDone(task.id, clock())
             // 解散收尾（幂等；非解散镇直接返回 false）
@@ -90,169 +91,109 @@ class SyncExecutor(
 
     // ---- 各动作 ----
 
-    private fun grant(task: SyncTask) {
+    /** 入镇 / 绑定时补加已有成员：只 addMember，再设 MEMBER 预设的 flag（默认为空） */
+    private fun memberAdd(task: SyncTask) {
         val ref = requireRef(task)
         val uuid = requireTarget(task)
         val member = repos.members.find(task.townId, uuid)
         if (member == null) {
-            // 成员已退出，授权任务作废（撤销任务会由 leave/kick 入队）
+            // 成员已退出，入镇任务作废（移除任务会由 leave/kick 入队）
             return
         }
-        // M-30：Dominion 的 **owner 不是 member**，也不能被加进组
-        // （真服日志：`You can't add dominion owner as a member.`）。
-        // 镇长凭 owner 身份已拥有全部权限，这条任务本身没有意义 —— 直接收尾，
-        // 否则它会以 PENDING 永久重试，每次打一屏堆栈。
         if (ref.ownerUuid == uuid) {
-            recordOwnerNoop(task, member)
-            return
+            // 旧 GRANT 指向 owner：Dominion 不允许把 owner 加成成员，直接收尾（M-30）。
+            // 新 MEMBER_ADD 指向 owner 只可能出现在"转让任务还没跑完"时，必须重试。
+            if (task.action == SyncAction.GRANT) return
+            throw RetryLaterException("等待领地所有权转让完成")
         }
-        val isMember = gateway.isMember(ref, uuid) ?: throw RetryLaterException("玩家不在 Dominion 缓存")
-        val existing = repos.grants.find(task.townId, task.dominionId, uuid)
-
-        if (existing == null) {
-            val preGroupId = if (isMember) (gateway.memberGroupId(ref, uuid) ?: 0) else 0
-            repos.grants.upsert(
-                Grant(
-                    townId = task.townId,
-                    dominionId = task.dominionId,
-                    uuid = uuid,
-                    preMember = isMember,
-                    preGroupId = preGroupId,
-                    appliedGroupId = 0,
-                    appliedRole = member.role,
-                    memberAdded = false,
-                    groupAdded = false,
-                    appliedAt = clock(),
-                ),
-            )
+        gateway.ensureMember(ref, uuid)
+        // PLAN §5.16.3：MEMBER_ADD 只加成员；MEMBER 预设默认为空。
+        // 管理的 administration 由单独的 MEMBER_FLAGS 任务处理（避免 addMember 后缓存尚未刷新时
+        // 立刻 setMemberFlag 触发一次可避免的 RetryLater）。
+        DominionConfig.flagsOf(TownRole.MEMBER).filterValues { it }.keys.forEach { flag ->
+            gateway.setMemberFlag(ref, uuid, flag, true)
         }
-
-        var memberAdded = existing?.memberAdded ?: false
-        if (!isMember) {
-            gateway.ensureMember(ref, uuid)
-            memberAdded = true
-            val row = repos.grants.find(task.townId, task.dominionId, uuid)
-            if (row != null) repos.grants.upsert(row.copy(memberAdded = true))
-        }
-
-        val group = gateway.ensureGroup(ref, member.role, groupName(task.townId, member.role), DominionConfig.flagsOf(member.role))
-        val known = repos.groups.find(task.townId, member.role)
-        repos.groups.upsert(
-            TownGroup(task.townId, member.role, group.id, group.name, owned = known?.owned ?: group.created),
-        )
-        gateway.putInGroup(ref, group.id, uuid)
-
-        val row = repos.grants.find(task.townId, task.dominionId, uuid)
-        if (row != null) {
-            repos.grants.upsert(
-                row.copy(
-                    appliedGroupId = group.id,
-                    appliedRole = member.role,
-                    memberAdded = memberAdded,
-                    groupAdded = true,
-                    appliedAt = clock(),
-                ),
+        // 管理：延后 5 秒再设 administration（addMember 后 Dominion 的成员缓存有数秒延迟，
+        // 实测 2 秒仍会失败一次；5 秒能避开绝大多数无谓的 WARN/重试）
+        if (member.role != TownRole.MEMBER) {
+            repos.tasks.enqueue(
+                task.townId, task.dominionId, SyncAction.MEMBER_FLAGS, uuid, null, clock() + 5_000,
             )
         }
     }
 
-    /**
-     * 为领地 owner 记一条**零副作用**账本行（M-30）。
-     *
-     * 目的是让 `Lifecycle.selfHeal` 的"没有账本记录就补一条 GRANT"不再每次入服都重新排任务；
-     * 撤销时这条行会被 `revoke` 直接删掉（`memberAdded`/`groupAdded` 全 false，不碰 Dominion）。
-     */
-    private fun recordOwnerNoop(task: SyncTask, member: Member) {
-        if (repos.grants.find(task.townId, task.dominionId, member.uuid) != null) return
-        repos.grants.upsert(
-            Grant(
-                townId = task.townId,
-                dominionId = task.dominionId,
-                uuid = member.uuid,
-                preMember = false,
-                preGroupId = 0,
-                appliedGroupId = 0,
-                appliedRole = member.role,
-                memberAdded = false,
-                groupAdded = false,
-                appliedAt = clock(),
-            ),
-        )
-    }
-
-    private fun revoke(task: SyncTask) {
-        val uuid = requireTarget(task)
-        val grant = repos.grants.find(task.townId, task.dominionId, uuid) ?: return // I4：无账本不动
-        val ref = gateway.resolveById(task.dominionId) ?: run {
-            // 领地已不存在：账本直接作废
-            repos.grants.delete(task.townId, task.dominionId, uuid)
-            return
-        }
-
-        // 铁律：先移出组，再移出领地成员
-        if (grant.groupAdded) {
-            gateway.removeFromGroup(ref, grant.appliedGroupId, uuid)
-        }
-        val ourGroups = repos.groups.listByTown(task.townId).map { it.groupId }.toSet()
-        if (grant.preGroupId != 0 && grant.preGroupId !in ourGroups) {
-            gateway.putInGroup(ref, grant.preGroupId, uuid)
-        }
-        if (grant.memberAdded && !grant.preMember) {
-            gateway.removeMemberFromDominion(ref, uuid)
-        }
-        repos.grants.delete(task.townId, task.dominionId, uuid)
-    }
-
-    private fun moveGroup(task: SyncTask) {
+    /** 改角色：把全部 managed flag 设成当前角色的期望值（含降级时设回 false） */
+    private fun applyMemberFlags(task: SyncTask) {
         val ref = requireRef(task)
         val uuid = requireTarget(task)
         val member = repos.members.find(task.townId, uuid) ?: return
-        // M-30 同源：owner 不在 Dominion 成员表里，`isMember` 恒为 false，
-        // 不拦的话转让镇长时（原镇长降为 MEMBER）这条任务也会永久重试。
         if (ref.ownerUuid == uuid) return
-        if (gateway.isMember(ref, uuid) == null) throw RetryLaterException("玩家不在 Dominion 缓存")
-        if (gateway.isMember(ref, uuid) == false) throw RetryLaterException("玩家不在领地成员表")
-
-        val group = gateway.ensureGroup(ref, member.role, groupName(task.townId, member.role), DominionConfig.flagsOf(member.role))
-        val known = repos.groups.find(task.townId, member.role)
-        repos.groups.upsert(
-            TownGroup(task.townId, member.role, group.id, group.name, owned = known?.owned ?: group.created),
-        )
-        gateway.putInGroup(ref, group.id, uuid)
-        repos.grants.find(task.townId, task.dominionId, uuid)?.let {
-            repos.grants.updateApplied(task.townId, task.dominionId, uuid, group.id, member.role, clock())
+        when (gateway.isMember(ref, uuid)) {
+            null -> throw RetryLaterException("玩家不在 Dominion 缓存")
+            false -> gateway.ensureMember(ref, uuid)
+            true -> Unit
+        }
+        DominionConfig.expectedFlags(member.role).forEach { (flag, value) ->
+            gateway.setMemberFlag(ref, uuid, flag, value)
         }
     }
 
-    private fun ensureGroups(task: SyncTask) {
-        val ref = requireRef(task)
-        repos.groups.listByTown(task.townId).forEach { known ->
-            val group = gateway.ensureGroup(ref, known.role, groupName(task.townId, known.role), DominionConfig.flagsOf(known.role))
-            if (group.id != known.groupId) {
-                repos.groups.upsert(known.copy(groupId = group.id, groupName = group.name))
-            }
-        }
+    /** 退镇 / 被踢 / 解散：移除 Dominion 成员。解散时成员行已删，靠镇状态放行。 */
+    private fun memberRemove(task: SyncTask) {
+        val ref = gateway.resolveById(task.dominionId) ?: return
+        val uuid = requireTarget(task)
+        val town = repos.towns.findById(task.townId)
+        // 离开后立刻重新入镇：旧移除任务不能把新身份删掉（解散时成员行本来就已清空，不适用）
+        if (town?.state == TownState.ACTIVE && repos.members.find(task.townId, uuid) != null) return
+        gateway.removeMemberFromDominion(ref, uuid)
     }
 
-    private fun deleteGroup(task: SyncTask) {
-        val payload = task.payload ?: throw DominionOpException("DELETE_GROUP 缺少 payload")
-        val groupId = Regex("\"group_id\"\\s*:\\s*(\\d+)").find(payload)?.groupValues?.get(1)?.toInt()
-            ?: throw DominionOpException("DELETE_GROUP payload 缺少 group_id: $payload")
-        val ref = gateway.resolveById(task.dominionId)
-        if (ref != null) {
-            gateway.deleteGroupIfEmpty(ref, groupId)
-        }
-        repos.groups.listByTown(task.townId)
-            .filter { it.groupId == groupId }
-            .forEach { repos.groups.delete(task.townId, it.role) }
-    }
-
+    /** 旧 `SET_MEMBER_FLAG`（个人覆写已删除）：仍执行，避免历史任务永久 PENDING */
     private fun setMemberFlag(task: SyncTask) {
         val ref = requireRef(task)
         val uuid = requireTarget(task)
-        val (flag, value) = PermsJson.decodeFlagPayload(task.payload)
+        if (repos.members.find(task.townId, uuid) == null) return
+        val (flag, value) = cn.trtown.model.PermsJson.decodeFlagPayload(task.payload)
             ?: throw DominionOpException("SET_MEMBER_FLAG payload 非法: ${task.payload}")
         gateway.setMemberFlag(ref, uuid, flag, value)
+    }
+
+    /**
+     * 转让主领地（PLAN §5.16.7 第 5 条）。
+     *
+     * 顺序：`setOwner` → 新 owner 退出成员表 → 原镇长按降级后的角色入表并设 flag。
+     * 任何一步失败都会重试；`setOwner` 本身幂等（owner 已是目标时直接返回）。
+     */
+    private fun transferDominion(task: SyncTask) {
+        val ref = requireRef(task)
+        val newOwner = requireTarget(task)
+        val oldOwner = ref.ownerUuid
+        if (oldOwner == newOwner) {
+            DominionBindings.updateOwner(ref.id, newOwner)
+            return
+        }
+
+        DominionBindings.beginInternalTransfer(ref.id)
+        try {
+            gateway.transferOwnership(ref, newOwner)
+        } finally {
+            DominionBindings.endInternalTransfer(ref.id)
+        }
+        DominionBindings.updateOwner(ref.id, newOwner)
+
+        val after = gateway.resolveById(ref.id) ?: ref.copy(ownerUuid = newOwner)
+        // 新 owner 不是成员：把残留的成员行删掉（幂等，本来没有就什么都不做）
+        gateway.removeMemberFromDominion(after, newOwner)
+
+        val oldMember = repos.members.find(task.townId, oldOwner)
+        if (oldMember != null) {
+            gateway.ensureMember(after, oldOwner)
+            // 刚 addMember 时 Dominion 的成员缓存有数秒延迟；延后 5 秒交给 MEMBER_FLAGS 任务，
+            // 失败也能按正常退避重试。
+            repos.tasks.enqueue(
+                task.townId, task.dominionId, SyncAction.MEMBER_FLAGS, oldOwner, null, clock() + 5_000,
+            )
+        }
     }
 
     // ---- 小工具 ----
@@ -262,9 +203,6 @@ class SyncExecutor(
 
     private fun requireTarget(task: SyncTask): UUID =
         task.targetUuid ?: throw DominionOpException("${task.action} 缺少目标玩家")
-
-    private fun groupName(townId: Int, role: cn.trtown.model.TownRole): String =
-        String.format(settings.groupNameFormat, townId, role.name)
 
     companion object {
         /** M-33：收尾扫描的间隔。轮询是 1 s，但自愈晚半分钟没有任何业务影响 */

@@ -28,15 +28,9 @@ object SuggestHooks {
     @Volatile
     var onTerritoriesChanged: (UUID) -> Unit = {}
 
-    /** `permissions.editable-flags` / `aliases` 快照需要重建（启动 / admin reload） */
-    @Volatile
-    var onFlagsChanged: () -> Unit = {}
-
     fun townsChanged() = onTownsChanged()
 
     fun pendingChanged(uuid: UUID) = onPendingChanged(uuid)
 
     fun territoriesChanged(uuid: UUID) = onTerritoriesChanged(uuid)
-
-    fun flagsChanged() = onFlagsChanged()
 }

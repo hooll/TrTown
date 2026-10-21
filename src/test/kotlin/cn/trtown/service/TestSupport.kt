@@ -20,7 +20,6 @@ object TestSupport {
         inviteExpireSeconds = 300,
         maxPendingInvites = 50,
         transferDemoteTo = TownRole.MEMBER,
-        groupNameFormat = "TrTown_%s_%s",
     )
 
     fun store(): Store {
@@ -35,24 +34,42 @@ object TestSupport {
 
     fun repos(store: Store): Repos = Repos.from(store)
 
+    /** Dominion `administration` 预设的 7 项（生产 flags.yml 实测） */
+    val administrationFlags = linkedMapOf(
+        "admin" to true,
+        "resize" to true,
+        "rename_dominion" to true,
+        "create_sub" to true,
+        "delete_sub" to true,
+        "resize_sub" to true,
+        "rename_sub" to true,
+    )
+
     /** 单测用：装一份合法的 Dominion 配置（不触碰真实 Dominion 类） */
     fun installDominionConfig() {
         cn.trtown.dominion.DominionConfig.install(
             cn.trtown.dominion.FlagConfig.Validated(
                 effective = mapOf(
-                    TownRole.MEMBER to mapOf("place" to true, "break" to true),
-                    TownRole.MANAGER to mapOf("place" to true, "break" to true, "fly" to true, "admin" to true),
-                    TownRole.MAYOR to mapOf("place" to true, "break" to true, "fly" to true, "admin" to true),
+                    TownRole.MEMBER to emptyMap(),
+                    TownRole.MANAGER to administrationFlags,
+                    TownRole.MAYOR to administrationFlags,
                 ),
-                editable = setOf("fly"),
+                managed = administrationFlags.keys,
+                presets = mapOf(
+                    TownRole.MEMBER to emptyList(),
+                    TownRole.MANAGER to listOf("administration"),
+                    TownRole.MAYOR to emptyList(),
+                ),
                 warnings = emptyList(),
             ),
         )
+        cn.trtown.dominion.DominionBindings.clear()
     }
 
     /** 删除本轮测试建出来的临时库 */
     fun cleanup() {
         tempDirs.forEach { runCatching { it.deleteRecursively() } }
         tempDirs.clear()
+        cn.trtown.dominion.DominionBindings.clear()
     }
 }

@@ -41,7 +41,6 @@ class SuggestionResultTest {
             "invite" to CmdInvite.command,
             "accept" to CmdAccept.command,
             "setrole" to CmdSetRole.command,
-            "perm" to CmdPerm.command,
             "create" to CmdCreate.command,
             "info" to CmdInfo.command,
         ).forEach { (name, body) -> root.literal(name) { body.func(this) } }
@@ -87,18 +86,6 @@ class SuggestionResultTest {
     }
 
     @Test
-    fun `perm 的 flag 来自注入快照并含中文别名`() {
-        SuggestCache.updateFlags(listOf("fly", "chest"), mapOf("飞行" to "fly", "箱子" to "chest"))
-        val result = suggest("perm", "Bob", "")
-        assertEquals(listOf("fly", "chest", "飞行", "箱子"), result)
-    }
-
-    @Test
-    fun `perm 的 value 补 on off reset`() {
-        assertEquals(listOf("on", "off", "reset"), suggest("perm", "Bob", "fly", ""))
-    }
-
-    @Test
     fun `accept 用待处理邀请缓存 空缓存返回 null`() {
         assertNull(suggest("accept", ""), "缓存为空时框架应返回 null")
 
@@ -123,7 +110,6 @@ class SuggestionResultTest {
         SuggestCache.putTownsForTest(listOf("青云镇"))
         SuggestCache.putPendingForTest(alice.uniqueId, listOf("青云镇"))
         SuggestCache.putTerritoriesForTest(alice.uniqueId, listOf("我的领地"))
-        SuggestCache.updateFlags(listOf("fly"), mapOf("飞行" to "fly"))
 
         ThreadGuard.enterMain()
         try {
@@ -131,8 +117,6 @@ class SuggestionResultTest {
                 arrayOf("invite", ""),
                 arrayOf("accept", ""),
                 arrayOf("setrole", "Bob", ""),
-                arrayOf("perm", "Bob", ""),
-                arrayOf("perm", "Bob", "fly", ""),
                 arrayOf("info", ""),
                 arrayOf("create", ""),
             ).forEach { args -> suggest(*args) }

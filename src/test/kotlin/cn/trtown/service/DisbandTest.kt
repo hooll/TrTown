@@ -3,7 +3,6 @@ package cn.trtown.service
 import cn.trtown.model.Grant
 import cn.trtown.model.Member
 import cn.trtown.model.SyncAction
-import cn.trtown.model.TownGroup
 import cn.trtown.model.TownRole
 import cn.trtown.model.TownState
 import cn.trtown.store.Store
@@ -94,26 +93,25 @@ class DisbandTest {
     }
 
     @Test
-    fun `AC-34 DELETE_GROUP 任务带 group_id 且组行在收尾后才删`() {
+    fun `AC-34 解散为每个成员入队 MEMBER_REMOVE，且任务完成前不收尾`() {
         val owner = UUID.randomUUID()
         val town = towns.create(owner, "青云镇")
+        val guest = UUID.randomUUID()
+        invites.invite(owner, guest)
+        invites.accept(guest, town.id)
         repos.towns.updateDominion(town.id, 44)
-        repos.groups.upsert(TownGroup(town.id, TownRole.MAYOR, 71, "TrTown_${town.id}_MAYOR", true))
-        repos.groups.upsert(TownGroup(town.id, TownRole.MEMBER, 73, "TrTown_${town.id}_MEMBER", false))
 
         towns.disband(owner)
 
-        val groupTasks = repos.tasks.listByTown(town.id).filter { it.action == SyncAction.DELETE_GROUP }
-        assertEquals(1, groupTasks.size, "只应为 owned=1 的组入队")
-        val payload = assertNotNull(groupTasks[0].payload)
-        assertTrue(payload.contains("\"group_id\":71"), "payload 必须带 group_id: $payload")
-        assertTrue(payload.contains("TrTown_${town.id}_MAYOR"))
+        val removes = repos.tasks.listByTown(town.id).filter { it.action == SyncAction.MEMBER_REMOVE }
+        assertEquals(2, removes.size, "镇长与成员各一条（owner 那条在 Dominion 侧是空操作）")
+        assertEquals(setOf(owner, guest), removes.mapNotNull { it.targetUuid }.toSet())
+        assertEquals(false, towns.finalizeDisband(town.id), "PENDING 任务未跑完不能收尾")
+        assertNotNull(repos.towns.findById(town.id)?.dominionId)
 
-        // 组行还在，等执行器删完再收尾
-        assertEquals(2, repos.groups.listByTown(town.id).size)
         markAllDone(town.id)
         assertTrue(towns.finalizeDisband(town.id))
-        assertEquals(0, repos.groups.listByTown(town.id).size)
+        assertNull(repos.towns.findById(town.id)?.dominionId)
     }
 
     @Test

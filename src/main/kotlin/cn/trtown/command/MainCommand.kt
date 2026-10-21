@@ -80,10 +80,7 @@ object MainCommand {
     val list = CmdList.command
 
     @CommandBody
-    val perm = CmdPerm.command
-
-    @CommandBody
-    val perms = CmdPerms.command
+    val perms = CmdFlags.command
 
     @CommandBody
     val disband = CmdDisband.command

@@ -21,7 +21,7 @@ class CommandTreeTest {
     private val expected = setOf(
         "version", "help", "create", "invite", "accept", "deny", "leave", "kick", "transfer",
         "setrole", "setprefix", "prefix", "setterritory", "unsetterritory", "info", "members",
-        "list", "perm", "perms", "disband", "admin",
+        "list", "perms", "disband", "admin",
     )
 
     /** 字段名 → SimpleCommandBody，与 `MainCommand` 的 `@CommandBody` 一一对应 */
@@ -43,8 +43,7 @@ class CommandTreeTest {
         "info" to CmdInfo.command,
         "members" to CmdMembers.command,
         "list" to CmdList.command,
-        "perm" to CmdPerm.command,
-        "perms" to CmdPerms.command,
+        "perms" to CmdFlags.command,
         "disband" to CmdDisband.command,
         "admin" to CmdAdmin.command,
     )
@@ -59,8 +58,8 @@ class CommandTreeTest {
     }
 
     @Test
-    fun `AC-42 子命令集合精确为 21 个`() {
-        assertEquals(21, bodies.size)
+    fun `AC-42 子命令集合精确为 20 个`() {
+        assertEquals(20, bodies.size)
         assertEquals(expected, bodies.keys)
     }
 
@@ -76,8 +75,8 @@ class CommandTreeTest {
     fun `AC-46 15 个节点必须挂补全且 uncheck=true`() {
         val root = buildTree()
         val required = listOf(
-            "invite/player", "kick/player", "transfer/player", "perm/player", "perms/player",
-            "setrole/player", "setrole/player/role", "perm/player/flag", "perm/player/flag/value",
+            "invite/player", "kick/player", "transfer/player", "perms/player",
+            "setrole/player", "setrole/player/role",
             "accept/town", "deny/town", "info/town", "setterritory/name",
             "admin/verify/town", "admin/force-disband/town",
         )
@@ -95,27 +94,6 @@ class CommandTreeTest {
         listOf("create/name", "setprefix/text").forEach { path ->
             val component = assertNotNull(resolve(root, path), "找不到节点 $path")
             assertFalse(hasSuggestion(component), "$path 是自由文本，不该有补全")
-        }
-    }
-
-    /**
-     * M-22（第 10 轮审计）：`/tt perm`、`/tt perm Bob`、`/tt perm Bob fly` 三种缺参
-     * 都要落到用法提示，不能走 `CommandBase.kt:106-116` 的 else → "未知或不完整的命令"。
-     *
-     * 手段是"故意让子节点隐式可选"：给 `perm`/`player`/`flag` 各挂 executor。
-     */
-    @Test
-    fun `M-22 perm 三层缺参都有 executor 兜底`() {
-        val root = buildTree()
-        listOf("perm", "perm/player", "perm/player/flag").forEach { path ->
-            val component = assertNotNull(resolve(root, path), "找不到节点 $path")
-            assertTrue(hasExecutor(component), "$path 缺 executor：缺参输入会打印『未知或不完整的命令』")
-        }
-
-        // 子节点必须被上面三个 executor 顶成 optional，否则带参输入会被判成"多余参数"
-        listOf("perm/player", "perm/player/flag", "perm/player/flag/value").forEach { path ->
-            val component = assertNotNull(resolve(root, path), "找不到节点 $path")
-            assertTrue(component.optional, "$path 应为 optional（由父节点 executor 隐式决定）")
         }
     }
 

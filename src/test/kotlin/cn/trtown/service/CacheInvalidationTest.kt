@@ -34,7 +34,6 @@ class CacheInvalidationTest {
         inviteExpireSeconds = 300,
         maxPendingInvites = 50,
         transferDemoteTo = cn.trtown.model.TownRole.MEMBER,
-        groupNameFormat = "TrTown_%s_%s",
     )
 
     @BeforeEach

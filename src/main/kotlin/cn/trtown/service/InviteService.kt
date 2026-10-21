@@ -118,7 +118,7 @@ class InviteService(
         repos.invites.updateStatus(invite.id, InviteStatus.ACCEPTED)
         val member = Member(town.id, target, TownRole.MEMBER, emptyMap(), now)
         repos.members.insert(member)
-        enqueue(town, SyncAction.GRANT, target)
+        enqueue(town, SyncAction.MEMBER_ADD, target)
         repos.audit.append(target, town.id, "accept", invite.inviterUuid.toString(), now)
         // M-15：入服时可能写过 60 s 负缓存，接受邀请后必须立刻失效
         CacheHooks.invalidate(target)

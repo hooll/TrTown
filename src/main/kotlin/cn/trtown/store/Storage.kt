@@ -34,7 +34,6 @@ object Storage {
     // 仓储入口（每次构造很轻，只持有 store 引用）
     val towns: TownRepository get() = TownRepository(store)
     val members: MemberRepository get() = MemberRepository(store)
-    val groups: GroupRepository get() = GroupRepository(store)
     val invites: InviteRepository get() = InviteRepository(store)
     val grants: GrantRepository get() = GrantRepository(store)
     val syncTasks: SyncTaskRepository get() = SyncTaskRepository(store)

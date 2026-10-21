@@ -56,11 +56,16 @@ object TrTown : Plugin() {
             val validated = FlagConfig.validate()
             DominionConfig.install(validated)
             validated.warnings.forEach { warning("[配置] $it") }
-            info(
-                "权限配置校验通过：MEMBER ${validated.effective[TownRole.MEMBER]?.size ?: 0} 项 / " +
-                    "MANAGER ${validated.effective[TownRole.MANAGER]?.size ?: 0} 项 / " +
-                    "MAYOR ${validated.effective[TownRole.MAYOR]?.size ?: 0} 项，可覆写 ${validated.editable.size} 项",
-            )
+            info("权限配置校验通过：" + listOf(TownRole.MEMBER, TownRole.MANAGER, TownRole.MAYOR).joinToString(" / ") { role ->
+                val count = validated.effective[role]?.size ?: 0
+                val presets = validated.presets[role].orEmpty()
+                val note = when {
+                    presets.isNotEmpty() -> presets.joinToString("、")
+                    role == TownRole.MEMBER -> "不设 flag，仅加成员"
+                    else -> "presets 为空，继承上级"
+                }
+                "${role.name} $count 项（$note）"
+            })
         } catch (ex: ConfigException) {
             severe("配置校验失败，TrTown 不启用：${ex.message}")
             throw ex
@@ -72,12 +77,13 @@ object TrTown : Plugin() {
         // 命令层：由 TabooLib 的 `@CommandHeader` / `@CommandBody` 注解在 ENABLE 阶段自动注册，
         // 这里不再手动 register()（PLAN §5.6.2 硬约束 4）。
         Lifecycle.registerListener()
+        // v1.25：拦截 Dominion 原生转让（主领地必须用 /tt transfer 连同小镇一起转）
+        cn.trtown.platform.DominionTransferListener.register()
         // M-15：服务层变更（建镇/入镇/退镇/改角色/改前缀/解散）要能立刻刷新 PAPI 缓存
         cn.trtown.papi.PlaceholderCache.installHooks()
-        // M-21：补全数据接线（在线玩家名 / 镇名 / 邀请 / 领地 / flag 快照）
+        // M-21：补全数据接线（在线玩家名 / 镇名 / 邀请 / 领地）
         SuggestHooks.onlineNames = { Players.onlineNames() }
         SuggestCache.installHooks()
-        SuggestCache.reloadFlagsFromSettings()
         // M-25：玩家消息接线。服务层只发钩子，投递统一走 platform/Notify（切目标玩家 region 线程）
         NotifyHooks.onInvited = { target, townName, inviterUuid ->
             Notify.send(target, "town.invite.received", townName, Players.nameOf(inviterUuid))
@@ -91,6 +97,8 @@ object TrTown : Plugin() {
             runCatching { Storage.init(BukkitPlugin.getInstance().dataFolder) }
                 .onSuccess {
                     info("存储就绪：${it.dialect}，共 ${it.tables.all.size} 张表")
+                    // v1.25：转让事件监听器不查库，启动时把绑定关系装进内存索引
+                    cn.trtown.dominion.DominionBindings.reload(Repos.fromStorage().towns.listActive())
                     // 两个常驻任务（PLAN §5.13 上限 2 个）
                     Lifecycle.startSyncLoop(cn.trtown.Settings.syncPollTicks)
                     Lifecycle.startInviteCleanup()

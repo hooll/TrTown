@@ -1,6 +1,5 @@
 package cn.trtown.command
 
-import cn.trtown.Settings
 import cn.trtown.dominion.DominionApiGateway
 import cn.trtown.dominion.DominionGateway
 import cn.trtown.service.Repos
@@ -22,9 +21,6 @@ object SuggestCache {
     @Volatile
     private var towns: List<String> = emptyList()
 
-    @Volatile
-    private var flags: List<String> = emptyList()
-
     private val pendingInvites = ConcurrentHashMap<UUID, List<String>>()
     private val territories = ConcurrentHashMap<UUID, List<String>>()
 
@@ -36,19 +32,11 @@ object SuggestCache {
 
     fun towns(): List<String> = towns
 
-    fun flags(): List<String> = flags
-
     /** 只读：**不触发刷新**（补全回调必须零副作用，AC-47 ⑥ 直接断言这条） */
     fun pendingInvites(uuid: UUID?): List<String> = uuid?.let { pendingInvites[it] } ?: emptyList()
 
     /** 只读：**不触发刷新**；数据由入服 / 领地变更时的异步刷新维护 */
     fun territories(uuid: UUID?): List<String> = uuid?.let { territories[it] } ?: emptyList()
-
-    // ---- flag 快照（启动 / admin reload 各调一次） ----
-
-    fun updateFlags(editable: List<String>, aliases: Map<String, String>) {
-        flags = Suggestions.flags(editable, aliases)
-    }
 
     // ---- 异步刷新 ----
 
@@ -112,7 +100,6 @@ object SuggestCache {
 
     fun clear() {
         towns = emptyList()
-        flags = emptyList()
         pendingInvites.clear()
         territories.clear()
     }
@@ -134,21 +121,10 @@ object SuggestCache {
         territories[uuid] = list
     }
 
-    @JvmSynthetic
-    internal fun putFlagsForTest(list: List<String>) {
-        flags = list
-    }
-
-    /** 启动 / `admin reload` 时用配置重建 flag 快照 */
-    fun reloadFlagsFromSettings() {
-        updateFlags(Settings.editableFlags, Settings.flagAliases)
-    }
-
     /** 接线：把 `SuggestHooks` 指向本缓存 */
     fun installHooks() {
         SuggestHooks.onTownsChanged = { refreshTownsAsync() }
         SuggestHooks.onPendingChanged = { uuid -> invalidatePending(uuid) }
         SuggestHooks.onTerritoriesChanged = { uuid -> invalidateTerritories(uuid) }
-        SuggestHooks.onFlagsChanged = { reloadFlagsFromSettings() }
     }
 }

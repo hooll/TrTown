@@ -114,7 +114,29 @@ object Lifecycle {
         }
 
         val dominionId = town.dominionId ?: return
-        if (repos.grants.find(town.id, dominionId, uuid) != null) return
-        repos.tasks.enqueue(town.id, dominionId, SyncAction.GRANT, uuid, null)
+        val gateway = DominionApiGateway()
+        val ref = gateway.resolveById(dominionId) ?: return
+        // 镇长 = 领地 owner，不是成员；入服自愈不碰他
+        if (uuid == ref.ownerUuid) return
+
+        // 已经有本成员的待处理任务 → 不重复入队
+        val pending = repos.tasks.listByTown(town.id).any {
+            it.targetUuid == uuid && it.state == cn.trtown.model.SyncState.PENDING &&
+                it.action in setOf(SyncAction.MEMBER_ADD, SyncAction.MEMBER_FLAGS, SyncAction.MEMBER_REMOVE)
+        }
+        if (pending) return
+
+        when (gateway.isMember(ref, uuid)) {
+            null -> return // 玩家不在 Dominion 缓存，下次登录再试
+            false -> repos.tasks.enqueue(town.id, dominionId, SyncAction.MEMBER_ADD, uuid, null)
+            true -> {
+                val expected = cn.trtown.dominion.DominionConfig.expectedFlags(member.role)
+                val actual = gateway.memberFlags(ref, uuid) ?: return
+                // 缺失按 false 处理：MEMBER 的默认期望就是"一个 flag 都不设"
+                if (expected.any { (actual[it.key] ?: false) != it.value }) {
+                    repos.tasks.enqueue(town.id, dominionId, SyncAction.MEMBER_FLAGS, uuid, null)
+                }
+            }
+        }
     }
 }

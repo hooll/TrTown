@@ -24,8 +24,8 @@ object FlagNames {
      * 预检：返回 [flags] 里不在 [known] 中的 key（空列表 = 全部合法）。
      *
      * 纯逻辑、可单测。存在的意义是**在建组之前**就拒掉非法 flag ——
-     * 先 `createGroup` 再逐条 `setGroupFlag`，中间任何一条非法都会让已经建好的组变成孤儿
-     * （真服残留 `TrTown_6_MAYOR`，M-27）。
+     * 先建组再逐条写组 flag，中间任何一条非法都会让已经建好的组变成孤儿
+     * （真服残留 `TrTown_6_MAYOR`，M-27；v1.25 起已不再建组，此预检仍用于成员 flag 的批量写入）。
      */
     fun illegal(flags: Map<String, Boolean>, known: Set<String> = registered): List<String> =
         flags.keys.filter { it !in known }

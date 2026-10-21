@@ -68,6 +68,10 @@ object Settings {
     val disbandConfirmSeconds: Long
         get() = conf.getLong("town.disband-confirm-seconds", 10)
 
+    /** 已绑定主领地时，转让镇长需要二次确认的窗口 */
+    val transferConfirmSeconds: Long
+        get() = conf.getLong("town.transfer-confirm-seconds", 10)
+
     /** 转让后原镇长降为的阶级 */
     val transferDemoteTo: TownRole
         get() = runCatching { TownRole.valueOf(conf.getString("town.transfer-demote-to", "MEMBER")!!.uppercase()) }
@@ -96,34 +100,26 @@ object Settings {
     val prefixDenyChars: List<String>
         get() = conf.getStringList("prefix.deny-chars")
 
-    // ---- permissions（个人权限覆写） ----
-
-    val allowOverride: Boolean
-        get() = conf.getBoolean("permissions.allow-override", true)
-
-    val editableFlags: List<String>
-        get() = conf.getStringList("permissions.editable-flags").map { it.lowercase() }
-
-    /** 中文别名 → 小写 flag_name */
-    val flagAliases: Map<String, String>
-        get() {
-            val section = conf.getConfigurationSection("permissions.aliases") ?: return emptyMap()
-            return section.getKeys(false).associate { it to section.getString(it)!!.lowercase() }
-        }
-
     // ---- dominion ----
 
-    val groupNameFormat: String
-        get() = conf.getString("dominion.group-name-format", "TrTown_%s_%s")!!
-
     /**
-     * 某阶级在 Dominion 里的 flag 表（key 一律小写 `flag_name`）。
+     * 某阶级在 Dominion 里的 flag 预设组名（v1.25，PLAN §5.16.1）。
      *
-     * 语义是"叠加"：生效值 = 从 MEMBER 到该阶级的并集，由 S3 的配置校验负责。
+     * 预设组的实际 flag 列表在 `plugins/Dominion/flags.yml` 的
+     * `groups.privilege.<名称>.flags`（4.9.5 实测结构），启动时由
+     * [cn.trtown.dominion.FlagConfig] 展开。**空列表合法**（该角色不设任何 flag）。
+     *
+     * 兼容旧配置：`presets` 键不存在时用默认值（MEMBER 空、MANAGER administration、MAYOR 空），
+     * 而不是把旧版逐 flag 表误读成"空预设"。
      */
-    fun roleFlags(role: TownRole): Map<String, Boolean> {
-        val section = conf.getConfigurationSection("dominion.roles.${role.name}") ?: return emptyMap()
-        return section.getKeys(false).associateWith { section.getBoolean(it) }
+    fun rolePresets(role: TownRole): List<String> {
+        val defaults = when (role) {
+            TownRole.MANAGER -> listOf("administration")
+            else -> emptyList()
+        }
+        val section = conf.getConfigurationSection("dominion.roles.${role.name}") ?: return defaults
+        if (!section.contains("presets")) return defaults
+        return section.getStringList("presets").map { it.trim() }.filter { it.isNotEmpty() }
     }
 
     // ---- sync ----

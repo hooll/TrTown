@@ -73,7 +73,6 @@ class StoreTest {
 
         val towns = TownRepository(store)
         val members = MemberRepository(store)
-        val groups = GroupRepository(store)
         val invites = InviteRepository(store)
         val grants = GrantRepository(store)
         val tasks = SyncTaskRepository(store)
@@ -118,13 +117,6 @@ class StoreTest {
 
         members.updatePerms(town.id, memberUuid, emptyMap())
         assertEquals(emptyMap(), members.find(town.id, memberUuid)?.perms)
-
-        // 阶级组：先 insert 再 update（upsert 两条路径）
-        groups.upsert(cn.trtown.model.TownGroup(town.id, TownRole.MEMBER, 7, "TrTown_1_MEMBER", true))
-        groups.upsert(cn.trtown.model.TownGroup(town.id, TownRole.MEMBER, 8, "TrTown_1_MEMBER", true))
-        assertEquals(8, groups.find(town.id, TownRole.MEMBER)?.groupId)
-        assertEquals(1, groups.listByTown(town.id).size)
-        assertEquals(town.id, groups.findByGroupId(8)?.townId)
 
         // 邀请 + 过期清理
         val target = UUID.randomUUID()

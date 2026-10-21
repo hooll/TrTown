@@ -3,7 +3,6 @@ package cn.trtown.store
 import cn.trtown.model.Member
 import cn.trtown.model.PermsJson
 import cn.trtown.model.Town
-import cn.trtown.model.TownGroup
 import cn.trtown.model.TownRole
 import cn.trtown.model.TownState
 import java.sql.ResultSet
@@ -201,56 +200,5 @@ class MemberRepository(private val store: Store) {
         role = TownRole.valueOf(getString("role")),
         perms = PermsJson.decode(getString("perms")),
         joinedAt = getLong("joined_at"),
-    )
-}
-
-/**
- * 阶级组仓储。定位一律用 `group_id`，组名只作兜底展示（PLAN §5.7）。
- */
-class GroupRepository(private val store: Store) {
-
-    private val table get() = store.tables.groups
-    private val ds get() = store.dataSource
-
-    fun listByTown(townId: Int): List<TownGroup> =
-        table.select(ds) { where("town_id" eq townId) }.map { toGroup() }
-
-    fun find(townId: Int, role: TownRole): TownGroup? =
-        table.select(ds) {
-            where { ("town_id" eq townId) and ("role" eq role.name) }
-        }.firstOrNull { toGroup() }
-
-    fun findByGroupId(groupId: Int): TownGroup? =
-        table.select(ds) { where("group_id" eq groupId) }.firstOrNull { toGroup() }
-
-    /** 写入或覆盖本镇某阶级的组信息 */
-    fun upsert(group: TownGroup) {
-        val affected = table.update(ds) {
-            set("group_id", group.groupId)
-            set("group_name", group.groupName)
-            set("owned", group.owned.asInt())
-            where { ("town_id" eq group.townId) and ("role" eq group.role.name) }
-        }
-        if (affected == 0) {
-            table.insert(ds, "town_id", "role", "group_id", "group_name", "owned") {
-                value(group.townId, group.role.name, group.groupId, group.groupName, group.owned.asInt())
-            }
-        }
-    }
-
-    fun delete(townId: Int, role: TownRole) {
-        table.delete(ds) { where { ("town_id" eq townId) and ("role" eq role.name) } }
-    }
-
-    fun deleteByTown(townId: Int) {
-        table.delete(ds) { where("town_id" eq townId) }
-    }
-
-    private fun ResultSet.toGroup() = TownGroup(
-        townId = getInt("town_id"),
-        role = TownRole.valueOf(getString("role")),
-        groupId = getInt("group_id"),
-        groupName = getString("group_name"),
-        owned = bool("owned"),
     )
 }

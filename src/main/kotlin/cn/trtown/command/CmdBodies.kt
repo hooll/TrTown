@@ -175,14 +175,10 @@ internal object CmdTransfer {
     val command = subCommand {
         dynamic("player") {
             suggestUncheck { Suggestions.playerNames(cn.trtown.service.SuggestHooks.onlineNames(), sender.name) }
-            execute<ProxyCommandSender> { sender, ctx, _ ->
-                Cmd.player(sender) { player ->
-                    val target = Cmds.player(ctx["player"]) ?: return@player Cmd.replyKey(sender, "common.player-offline")
-                    Cmd.run(sender) {
-                        Cmds.towns().transfer(player.uniqueId, target)
-                        Cmd.replyKey(sender, "town.transfer.success", ctx["player"])
-                    }
-                }
+            // 已绑定主领地时：无 confirm 只出提示、零写入（PLAN §5.16.7）
+            execute<ProxyCommandSender> { sender, ctx, _ -> Cmds.doTransfer(sender, ctx["player"], confirmed = false) }
+            literal("confirm") {
+                execute<ProxyCommandSender> { sender, ctx, _ -> Cmds.doTransfer(sender, ctx["player"], confirmed = true) }
             }
         }
     }
@@ -229,47 +225,6 @@ internal object CmdSetRole {
     }
 }
 
-internal object CmdPerm {
-    val command = subCommand {
-        // M-22：三层缺参都要落到用法提示，而不是框架的"未知或不完整的命令"。
-        // 这是**故意的隐式可选**：先挂 executor 再加子节点，子节点自动 optional（CommandComponent.kt:27-31/46-50）。
-        execute<ProxyCommandSender> { sender, _, _ -> Cmds.usagePerm(sender) }
-        dynamic("player") {
-            suggestUncheck { Suggestions.playerNames(cn.trtown.service.SuggestHooks.onlineNames(), sender.name) }
-            execute<ProxyCommandSender> { sender, _, _ -> Cmds.usagePerm(sender) }
-            dynamic("flag") {
-                suggestUncheck { SuggestCache.flags() }
-                execute<ProxyCommandSender> { sender, _, _ -> Cmds.usagePerm(sender) }
-                dynamic("value") {
-                    // value 自己不挂 execute：它由 flag 的 execute 变成 optional，
-                    // 缺 value 时落到 flag 的 execute（用法提示）。见 CommandTreeTest 的断言。
-                    suggestUncheck { Suggestions.values() }
-                    execute<ProxyCommandSender> { sender, ctx, _ ->
-                        Cmd.player(sender) { player ->
-                            val target = Cmds.player(ctx["player"]) ?: return@player Cmd.replyKey(sender, "common.player-offline")
-                            val raw = ctx["value"]
-                            Cmd.run(sender) {
-                                if (raw.equals("reset", true)) {
-                                    Cmds.permission().reset(player.uniqueId, target)
-                                    Cmd.replyKey(sender, "town.perm.reset", ctx["player"])
-                                } else {
-                                    val value = when (raw.lowercase()) {
-                                        "on", "true", "开" -> true
-                                        "off", "false", "关" -> false
-                                        else -> throw TownException(TownError.FLAG_INVALID, raw)
-                                    }
-                                    Cmds.permission().set(player.uniqueId, target, ctx["flag"], value)
-                                    Cmd.replyKey(sender, "town.perm.success", ctx["player"], ctx["flag"], value)
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
 // ---------------- 可选参数：先 execute 再 dynamic（M-17） ----------------
 
 internal object CmdSetTerritory {
@@ -292,7 +247,7 @@ internal object CmdInfo {
     }
 }
 
-internal object CmdPerms {
+internal object CmdFlags {
     val command = subCommand {
         execute<ProxyCommandSender> { sender, _, _ -> Cmds.doPerms(sender, null) }
         dynamic("player") {
@@ -342,7 +297,7 @@ internal object CmdAdmin {
                 "§b§lTrTown §7运维命令",
                 "§7/trtown admin reload §8- 重载配置并重新校验",
                 "§7/trtown admin retry §8- 重置 DEAD 同步任务",
-                "§7/trtown admin verify <镇名> §8- 比对数据库与 Dominion",
+                "§7/trtown admin verify <镇名> [fix] §8- 比对数据库与 Dominion（fix = 按同一判据修复）",
                 "§7/trtown admin force-disband <镇名> §8- 强制解散",
             ).forEach { Cmd.reply(sender, it) }
         }
@@ -354,7 +309,6 @@ internal object CmdAdmin {
                     Settings.reload()
                     Cmds.repos()
                     cn.trtown.dominion.DominionConfig.install(cn.trtown.dominion.FlagConfig.validate())
-                    cn.trtown.service.SuggestHooks.flagsChanged()
                     Cmd.replyKey(sender, "admin.reload.done")
                 }
             }
@@ -381,6 +335,19 @@ internal object CmdAdmin {
                         else {
                             Cmd.replyKey(sender, "admin.verify.diff", diffs.size)
                             diffs.forEach { Cmd.reply(sender, "§7- §c$it") }
+                        }
+                    }
+                }
+                literal("fix") {
+                    execute<ProxyCommandSender> { sender, ctx, _ ->
+                        if (!sender.hasPermission("trtown.admin")) return@execute Cmd.replyKey(sender, "common.no-permission")
+                        Cmd.run(sender) {
+                            val fixed = AdminTasks.fix(ctx["town"])
+                            if (fixed.isEmpty()) Cmd.replyKey(sender, "admin.verify.ok", ctx["town"])
+                            else {
+                                Cmd.replyKey(sender, "admin.verify.fixed", fixed.size)
+                                fixed.forEach { Cmd.reply(sender, "§7- §a$it") }
+                            }
                         }
                     }
                 }

@@ -19,6 +19,7 @@ town:
   invite-expire-seconds: 300
   max-pending-invites: 50
   disband-confirm-seconds: 10
+  transfer-confirm-seconds: 10      # 已绑定主领地时，转让镇长需二次确认的窗口
   transfer-demote-to: MEMBER        # 转让后原镇长降为 MEMBER 或 MANAGER
 
 prefix:
@@ -30,80 +31,18 @@ prefix:
   cooldown-seconds: 0               # 0 = 随时可改
   deny-chars: ["%", "{", "}", "[", "]", "§"]   # 命中即拒绝（防 PAPI 递归 / 伪造系统标签）
 
-permissions:
-  # R12 实测结论（2026-10-21，反编译 Dominion 4.9.5 Others#checkPrivilegeFlagSilence）：
-  # 成员一旦属于某个组，Dominion **只看组 flag**，成员个人 flag 被完全忽略；
-  # 个人 flag 只在 member.groupId == -1 时生效。因此"个人权限覆写"在本服**不可用**，
-  # 默认关闭。改成 true 也不会生效，只会让玩家以为设置成功（R18 明确禁止）。
-  allow-override: false
-  editable-flags: [teleport, fly, pvp, ignite, hopper, chest, door, button, lever,
-                   place, break, craft, enchant, pick_up, drop_item]
-  aliases:
-    传送: teleport
-    飞行: fly
-    PvP: pvp
-    点燃: ignite
-    漏斗: hopper
-    箱子: chest
-    门: door
-    按钮: button
-    拉杆: lever
-    放置: place
-    破坏: break
-    工作台: craft
-    附魔: enchant
-    拾取: pick_up
-    丢弃: drop_item
-
 dominion:
-  # %1 = 镇 id（用 id 不用镇名，避免改名后组名漂移），%2 = 阶级名
-  group-name-format: "TrTown_%s_%s"
-  # key 必须写 Dominion 的 flag_name（全小写），不是常量名。
-  # 实证：Flags.getPreFlag(key) 内部是 flag.getFlagName().equals(key)，大小写敏感。
-  # 陷阱：破坏方块常量叫 BREAK_BLOCK，flag_name 是 "break"；重命名领地是 "rename_dominion"。
-  # 语义是"叠加"：某阶级生效 flag = 从 MEMBER 到该阶级的并集；低阶 true 而高阶显式 false → 启动校验报错
+  # v1.25（PLAN §5.16.1）：不再创建 Dominion 权限组。
+  # 每个角色只配置 Dominion flags.yml 里的**预设组名**，启动时从
+  # plugins/Dominion/flags.yml 的 groups.privilege.<名称>.flags 展开。
+  # 空列表合法 = 该角色不设任何 flag（MEMBER 默认就是"只加成员，与 Dominion GUI 一致"）。
   roles:
     MEMBER:
-      place: true
-      break: true
-      chest: true
-      door: true
-      trapdoor: true
-      fence_gate: true
-      button: true
-      lever: true
-      craft: true
-      anvil: true
-      enchant: true
-      furnace: true
-      bed: true
-      lectern: true
-      pick_up: true
-      drop_item: true
-      harvest: true
-      sowing: true
-      fertilizer: true
-    MANAGER:                   # 在 MEMBER 基础上额外开启；即"领地管理员"
-      teleport: true
-      fly: true
-      pvp: true
-      ignite: true
-      hopper: true
-      dropper: true
-      dispenser: true
-      brew: true
-      beacon: true
-      trade: true
-      shear: true
-      feed: true
-      admin: true              # 管理普通成员和分组
-      resize: true             # ↓ 6 项为领地本体操作（用户拍板全给，风险见 README）
-      rename_dominion: true
-      create_sub: true
-      delete_sub: true
-      resize_sub: true
-      rename_sub: true
-    MAYOR: {}                  # 在 MANAGER 基础上额外开启；当前无额外项
+      presets: []              # 只 addMember，一个 flag 都不设
+    MANAGER:
+      presets: [administration]  # admin + resize + rename_dominion + 6 项子领地操作，共 7 项
+    MAYOR:
+      presets: []              # 继承 MEMBER + MANAGER；当前无额外项
 
 sync:
   poll-ticks: 20

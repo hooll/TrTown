@@ -7,34 +7,37 @@ import cn.trtown.model.TownRole
 class ConfigException(message: String) : RuntimeException(message)
 
 /**
- * `dominion.roles.*` 与 `permissions.editable-flags` 的启动校验（M-3）。
+ * `dominion.roles.*.presets` 的启动校验（M-3 / M-26 / v1.25）。
  *
- * **唯一判据**：一个 flag 名合法 ⟺ `Flags.getPreFlag(name)` 认它（M-26）。
- * 启动校验和运行期 `DominionApiGateway` 用的是同一个查表，所以两者不可能再分叉 ——
- * 上一版把 `Flags` 的静态常量取并集，结果 `container` 这种"有常量、没注册"的名字
- * 启动时放行、绑定时才炸（真服实测：`/dominion group_set_flag ... container true`
- * → `[Dominion] Unknown privilege flag: container.`）。
+ * 新模型（PLAN §5.16.1）不再有"阶级组"，角色的 flag 集来自 Dominion 自己的
+ * `plugins/Dominion/flags.yml` 预设组：`groups.privilege.<preset>.flags`。
+ *
+ * **唯一判据不变**：一个 flag 名合法 ⟺ `Flags.getPreFlag(name)` 认它（M-26）。
+ * 启动校验和运行期 `DominionApiGateway` 用的是同一个查表，所以两者不可能再分叉。
  *
  * 校验规则：
- * 1. 任何出现 flag 名的地方（roles / editable-flags / aliases 的目标值）都必须能解析，否则**启动失败**；
- * 2. 三档必须严格递进：低阶 true 的 flag，高阶不得显式 false；
- * 3. `editable-flags` 里合法但 roles 从未出现的项丢弃并 WARN。
+ * 1. `flags.yml` 读不到 → 启动失败，**不回退内置常量**；
+ * 2. preset 名不存在、或非空 presets 展开出 0 项 → 启动失败；
+ * 3. 展开出的 flag 名必须全部能在 Dominion 注册表里找到；
+ * 4. 生效值按 MEMBER → MANAGER → MAYOR 逐级并集，保证高阶是低阶的超集。
  */
 object FlagConfig {
 
     data class Validated(
         /** 生效值：每个阶级 = 从 MEMBER 到该阶级的并集 */
         val effective: Map<TownRole, Map<String, Boolean>>,
-        val editable: Set<String>,
+        /** 所有角色会触碰的 flag 并集（降级时要显式设回 false 的就是这批） */
+        val managed: Set<String>,
+        /** 原始 presets，用于启动日志 */
+        val presets: Map<TownRole, List<String>>,
         val warnings: List<String>,
     )
 
     private val order = listOf(TownRole.MEMBER, TownRole.MANAGER, TownRole.MAYOR)
 
     fun validate(): Validated = validate(
-        roleFlags = order.associateWith { Settings.roleFlags(it) },
-        editableFlags = Settings.editableFlags,
-        aliases = Settings.flagAliases,
+        rolePresets = order.associateWith { Settings.rolePresets(it) },
+        presetFlags = DominionPresets.load(),
         knownFlagNames = registeredFlagNames(),
     )
 
@@ -49,70 +52,73 @@ object FlagConfig {
     }
 
     /**
-     * 纯函数版：不读配置、不碰 Dominion，供单测注入 [knownFlagNames]（M-26 的回归闸门）。
+     * 纯函数版：不读配置、不碰 Dominion，供单测注入 [presetFlags] 与 [knownFlagNames]。
      */
     fun validate(
-        roleFlags: Map<TownRole, Map<String, Boolean>>,
-        editableFlags: List<String>,
-        aliases: Map<String, String>,
+        rolePresets: Map<TownRole, List<String>>,
+        presetFlags: Map<String, List<String>>,
         knownFlagNames: Set<String>,
     ): Validated {
-        val warnings = mutableListOf<String>()
         val illegal = LinkedHashSet<String>()
-
-        // 1. roles：逐级解析，非法项收集后一次性报错（比"报第一个就停"好排查）
         val normalized = LinkedHashMap<TownRole, Map<String, Boolean>>()
+
         for (role in order) {
-            val map = LinkedHashMap<String, Boolean>()
-            roleFlags[role].orEmpty().forEach { (key, value) ->
-                if (key !in knownFlagNames) illegal += "dominion.roles.${role.name}.$key" else map[key] = value
+            val presets = rolePresets[role].orEmpty()
+            val flags = LinkedHashSet<String>()
+            for (preset in presets) {
+                val list = presetFlags[preset] ?: throw ConfigException(
+                    "dominion.roles.${role.name}.presets 引用了不存在的预设组 `$preset`；" +
+                        "flags.yml 里可用：${presetFlags.keys.sorted().joinToString("、")}",
+                )
+                if (list.isEmpty()) {
+                    throw ConfigException(
+                        "预设组 `$preset` 展开出 0 个 flag（dominion.roles.${role.name}.presets 非空时不允许）",
+                    )
+                }
+                list.forEach { raw ->
+                    val flag = raw.trim().lowercase()
+                    if (flag !in knownFlagNames) {
+                        illegal += "dominion.roles.${role.name}.presets.$preset.$flag"
+                    } else {
+                        flags += flag
+                    }
+                }
             }
-            normalized[role] = map
+            normalized[role] = flags.associateWith { true }
         }
 
-        // 2. editable-flags / aliases 的目标值：同一个判据
-        editableFlags.forEach { raw ->
-            if (raw !in knownFlagNames) illegal += "permissions.editable-flags.$raw"
-        }
-        aliases.forEach { (display, target) ->
-            val name = target.lowercase()
-            if (name !in knownFlagNames) illegal += "permissions.aliases.$display → $target"
-        }
         if (illegal.isNotEmpty()) {
             throw ConfigException(
-                "以下配置项不是 Dominion 4.9.5 注册的 privilege flag（启动即失败，避免「配置看着没问题、绑定时才炸」）：" +
+                "以下配置项不是 Dominion 4.9.5 注册的 privilege flag（启动即失败，避免「配置看着没问题、运行期才炸」）：" +
                     illegal.joinToString("、") +
                     "；合法项共 ${knownFlagNames.size} 个，如 " + knownFlagNames.sorted().take(6).joinToString("/"),
             )
         }
 
-        // 3. 递进校验
-        for (i in 0 until order.size - 1) {
-            val lower = order[i]
-            val higher = order[i + 1]
-            normalized.getValue(lower).forEach { (flag, value) ->
-                if (value && normalized.getValue(higher)[flag] == false) {
-                    throw ConfigException("$lower 开启了 $flag，但 $higher 显式关闭了它（三档必须递进）")
-                }
-            }
-        }
-
-        // 4. 生效值 = 逐级并集
+        // 生效值 = 逐级并集
         val effective = LinkedHashMap<TownRole, Map<String, Boolean>>()
         val acc = LinkedHashMap<String, Boolean>()
         for (role in order) {
-            normalized.getValue(role).forEach { (k, v) -> acc[k] = v }
+            normalized.getValue(role).keys.forEach { acc[it] = true }
             effective[role] = LinkedHashMap(acc)
         }
 
-        // 5. editable-flags ⊆ roles 里出现过的 flag（合法但没用到 → 丢弃并 WARN）
-        val editable = LinkedHashSet<String>()
-        editableFlags.forEach { raw ->
-            if (raw in acc) editable += raw
-            else warnings += "permissions.editable-flags 里的 $raw 未出现在 dominion.roles.*，已丢弃"
+        // 三档递进（并集写法下恒成立，保留断言防止将来改成"逐项 true/false 表"时静默退化）
+        for (i in 0 until order.size - 1) {
+            val lower = order[i]
+            val higher = order[i + 1]
+            val missing = effective.getValue(lower).keys - effective.getValue(higher).keys
+            if (missing.isNotEmpty()) {
+                throw ConfigException("三档必须递进：$lower 有 $missing，但 $higher 没有")
+            }
         }
 
-        return Validated(effective, editable, warnings)
+        return Validated(
+            effective = effective,
+            managed = acc.keys.toSet(),
+            presets = rolePresets,
+            warnings = emptyList(),
+        )
     }
 }
 
@@ -131,4 +137,17 @@ object DominionConfig {
 
     /** 某阶级的生效 flag（已按递进展开） */
     fun flagsOf(role: TownRole): Map<String, Boolean> = current.effective[role] ?: emptyMap()
+
+    /** 所有角色会触碰的 flag（含"该角色应为 false"的项） */
+    fun managedFlags(): Set<String> = current.managed
+
+    /**
+     * 某阶级的完整期望值：managed 里每个 flag 都有明确 true/false。
+     *
+     * 用途：降级时把高阶 flag 设回 false（PLAN §5.16.3）、`admin verify` 比对实况（§5.16.4）。
+     */
+    fun expectedFlags(role: TownRole): Map<String, Boolean> {
+        val effective = flagsOf(role)
+        return current.managed.associateWith { effective[it] ?: false }
+    }
 }

@@ -1,6 +1,8 @@
 package cn.trtown.platform
 
+import cn.trtown.dominion.BlockPosition
 import org.bukkit.Bukkit
+import org.bukkit.entity.Player
 import java.util.UUID
 
 /**
@@ -18,6 +20,17 @@ object Players {
     fun onlineNames(): List<String> = Bukkit.getOnlinePlayers().map { it.name }
 
     fun isOnline(uuid: UUID): Boolean = Bukkit.getPlayer(uuid) != null
+
+    /**
+     * 捕获玩家当前位置（纯数据）。
+     *
+     * **必须在玩家自己的 region 线程调用**（命令线程即可）；之后把 [BlockPosition]
+     * 交给异步服务，避免在异步线程读 Bukkit 实体。
+     */
+    fun positionOf(player: Player): BlockPosition {
+        val loc = player.location
+        return BlockPosition(loc.world.uid, loc.x, loc.y, loc.z)
+    }
 
     /**
      * 任意对象的 UUID（如果它是一个在线玩家）。

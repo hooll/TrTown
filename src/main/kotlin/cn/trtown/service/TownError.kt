@@ -33,10 +33,6 @@ enum class TownError(val message: String) {
     PREFIX_DENY_CHAR("前缀包含不允许的字符"),
     PREFIX_INVALID("前缀不合法"),
     PREFIX_DISABLED("前缀功能已关闭"),
-    OVERRIDE_DISABLED("本服不支持个人权限覆写"),
-    FLAG_NOT_EDITABLE("该权限不可单独设置"),
-    FLAG_INVALID("权限名不合法"),
-    TARGET_NOT_OVERRIDABLE("该成员原本就在领地里，请用 Dominion 原生命令调整"),
 }
 
 class TownException(val error: TownError, val detail: String? = null) :

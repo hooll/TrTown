@@ -15,7 +15,6 @@ data class TownRules(
     val inviteExpireSeconds: Long,
     val maxPendingInvites: Int,
     val transferDemoteTo: TownRole,
-    val groupNameFormat: String,
 ) {
     companion object {
         fun fromSettings(): TownRules = TownRules(
@@ -25,7 +24,6 @@ data class TownRules(
             inviteExpireSeconds = Settings.inviteExpireSeconds,
             maxPendingInvites = Settings.maxPendingInvites,
             transferDemoteTo = Settings.transferDemoteTo,
-            groupNameFormat = Settings.groupNameFormat,
         )
     }
 }

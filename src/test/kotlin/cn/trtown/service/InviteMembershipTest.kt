@@ -129,7 +129,7 @@ class InviteMembershipTest {
     }
 
     @Test
-    fun `绑定领地后退出会入队 REVOKE`() {
+    fun `绑定领地后退出会入队 MEMBER_REMOVE`() {
         val (townId, _, guest) = setupTown()
         repos.towns.updateDominion(townId, 77)
 
@@ -137,7 +137,7 @@ class InviteMembershipTest {
 
         val tasks = repos.tasks.listByTown(townId)
         assertEquals(1, tasks.size)
-        assertEquals(SyncAction.REVOKE, tasks[0].action)
+        assertEquals(SyncAction.MEMBER_REMOVE, tasks[0].action)
         assertEquals(guest, tasks[0].targetUuid)
         assertEquals(77, tasks[0].dominionId)
     }
@@ -162,12 +162,12 @@ class InviteMembershipTest {
     }
 
     @Test
-    fun `改角色会入队 MOVE_GROUP（绑定时）`() {
+    fun `改角色会入队 MEMBER_FLAGS（绑定时）`() {
         val (townId, owner, guest) = setupTown()
         repos.towns.updateDominion(townId, 88)
         towns.setrole(owner, guest, TownRole.MANAGER)
 
         val tasks = repos.tasks.listByTown(townId)
-        assertTrue(tasks.any { it.action == SyncAction.MOVE_GROUP && it.targetUuid == guest })
+        assertTrue(tasks.any { it.action == SyncAction.MEMBER_FLAGS && it.targetUuid == guest })
     }
 }

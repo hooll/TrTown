@@ -6,13 +6,11 @@ import cn.trtown.Settings
 data class SyncSettings(
     val maxAttempts: Int,
     val backoffSeconds: List<Long>,
-    val groupNameFormat: String,
 ) {
     companion object {
         fun fromSettings(): SyncSettings = SyncSettings(
             maxAttempts = Settings.syncMaxAttempts,
             backoffSeconds = Settings.syncBackoffSeconds,
-            groupNameFormat = Settings.groupNameFormat,
         )
     }
 }
