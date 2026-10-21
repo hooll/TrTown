@@ -107,6 +107,7 @@ class SyncExecutorTest {
         }
         assertNotNull(repos.towns.findById(town.id)?.dominionId, "前置条件：解散后 dominion_id 还在")
 
+        SyncExecutor.resetSweepThrottleForTest() // M-33 的 30 s 节流是 JVM 级共享状态
         executor.runOnce()
 
         assertNull(repos.towns.findById(town.id)?.dominionId, "轮询必须自己把收尾补上，否则领地永久被占")

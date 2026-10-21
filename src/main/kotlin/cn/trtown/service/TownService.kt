@@ -153,11 +153,16 @@ class TownService(
 
         val hadDominion = town.dominionId != null
         val hadGroups = repos.groups.listByTown(townId).isNotEmpty()
-        if (!hadDominion && !hadGroups) return true
+        val hadMembers = repos.members.countByTown(townId) > 0
+        if (!hadDominion && !hadGroups && !hadMembers) return true
 
         repos.grants.deleteByTown(townId)
         if (hadDominion) repos.towns.updateDominion(townId, null)
         repos.groups.deleteByTown(townId)
+        // M-35：成员行也必须清。留着的话玩家会变成"已解散小镇的镇长"：
+        // /tt leave 要求先转让、没有第二个人可转、/tt create 说已在镇里、/tt setterritory 说镇已解散 ——
+        // 四条路全堵，只能管理员改库。
+        repos.members.deleteByTown(townId)
         repos.audit.append(null, townId, "disband-finalized", "dominion=${town.dominionId}", clock())
         return true
     }

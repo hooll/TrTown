@@ -194,6 +194,26 @@ class DisbandTest {
         assertNull(repos.towns.findById(town.id)?.dominionId)
     }
 
+    /**
+     * M-35：收尾必须把成员行也清掉。
+     *
+     * 留着的话玩家会变成"已解散小镇的镇长"：`/tt leave` 要求先转让（没有第二个人可转）、
+     * `/tt create` 说"你已经在某个小镇里"、`/tt setterritory` 说"小镇已解散" —— 四条路全堵，
+     * 只能管理员改库。正常 `disband()` 会删成员，但被打断或历史脏数据不会。
+     */
+    @Test
+    fun `M-35 收尾会删掉残留的成员行`() {
+        val owner = UUID.randomUUID()
+        val town = towns.create(owner, "青云镇")
+        towns.disband(owner)
+        // 模拟"删成员与改状态之间被打断"留下的脏数据
+        repos.members.insert(Member(town.id, owner, TownRole.MAYOR, emptyMap(), now))
+
+        assertEquals(true, towns.finalizeDisband(town.id))
+        assertEquals(0, repos.members.countByTown(town.id), "收尾后不该还有人挂在这个镇上")
+        assertNull(repos.members.findByUuid(owner), "玩家必须能重新建镇")
+    }
+
     @Test
     fun `未绑定领地的镇解散后立即收尾且没有同步任务`() {
         val owner = UUID.randomUUID()

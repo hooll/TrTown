@@ -44,10 +44,16 @@ class SyncExecutor(
      * 就再没有任何事件会触发它 —— 那块领地会被永久占住（真服症状：
      * `该领地已被其他小镇绑定（旧镇解散尚未完成，请稍后再试）`，等到天荒地老也不会变）。
      *
-     * 放在每轮轮询里而不是新开常驻任务（PLAN §5.13 上限 2 个）：一次小表 SELECT，
-     * 且 `finalizeDisband` 本身幂等，没有脏数据时是纯读。
+     * 放在轮询里而不是新开常驻任务（PLAN §5.13 上限 2 个）。**M-33**：不必每秒扫一次 ——
+     * 轮询是 1 s 一次，而 `DISBANDED` 的行永不删除、会长期累积，每秒把全表装配成 `Town` 对象只为筛掉 99% 不划算。
+     * 30 s 一次足够（收尾本身幂等，晚半分钟没有任何业务影响）。
+     *
+     * 计数放在 companion：`Lifecycle` 每轮都会 `new SyncExecutor(...)`，实例字段活不过一秒。
      */
     private fun sweepDisbanded() {
+        val now = clock()
+        if (lastSweepAt >= 0 && now - lastSweepAt < SWEEP_INTERVAL_MS) return
+        lastSweepAt = now
         repos.towns.listDisbandedUnfinished().forEach { town ->
             runCatching { towns.finalizeDisband(town.id) }
                 .onFailure { cn.trtown.platform.Log.failure("解散收尾自愈（镇 #${town.id}）", it) }
@@ -259,4 +265,19 @@ class SyncExecutor(
 
     private fun groupName(townId: Int, role: cn.trtown.model.TownRole): String =
         String.format(settings.groupNameFormat, townId, role.name)
+
+    companion object {
+        /** M-33：收尾扫描的间隔。轮询是 1 s，但自愈晚半分钟没有任何业务影响 */
+        private const val SWEEP_INTERVAL_MS = 30_000L
+
+        /** 跨实例共享（`Lifecycle` 每轮都 new 一个 SyncExecutor）；-1 = 还没扫过，保证启动后第一次一定扫 */
+        @Volatile
+        private var lastSweepAt = -1L
+
+        /** 单测用：清掉节流状态，避免用例之间互相影响（companion 状态在整个 JVM 里共享） */
+        @JvmSynthetic
+        internal fun resetSweepThrottleForTest() {
+            lastSweepAt = -1L
+        }
+    }
 }
