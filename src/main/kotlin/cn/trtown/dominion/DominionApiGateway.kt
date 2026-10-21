@@ -95,6 +95,9 @@ class DominionApiGateway(
 
     override fun ensureMember(ref: DominionRef, uuid: UUID) {
         val dom = dom(ref) ?: throw DominionOpException("领地 ${ref.id} 不存在")
+        // M-30：owner 不是 member，Dominion 会拒绝 `You can't add dominion owner as a member.`。
+        // 上层（SyncExecutor / TerritoryService）已经跳过，这里是兜底 —— 任何新调用方都不该踩第二次。
+        if (dom.owner == uuid) return
         if (api.getMember(dom, uuid) != null) return
         val player = api.getPlayer(uuid) ?: throw RetryLaterException("玩家 $uuid 不在 Dominion 缓存")
         // 写操作 3/8：MemberProvider.addMember

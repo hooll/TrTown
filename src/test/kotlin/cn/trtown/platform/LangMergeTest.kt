@@ -78,6 +78,29 @@ class LangMergeTest {
      *
      * 这一条覆盖的是接线末端：读资源、读磁盘、写回。上面几条只测纯函数。
      */
+    /**
+     * M-31：反复补键不能把 HEADER 注释越堆越多。
+     *
+     * 上一版每次追加都写一遍 HEADER，而 header 以 `#` 开头、`keyOf()` 返回 null，
+     * 永远不会被"已有键"命中，于是每补一次就多一行注释。
+     */
+    @Test
+    fun `M-31 反复合并不会重复追加 header`() {
+        val header = "# 以下条目由 TrTown 启动时自动补齐"
+
+        // 第一次合并：补上两个新键
+        val once = LangMerge.merge(old, new).text
+        assertEquals(1, once.lines().count { it.trim().startsWith(header) }, "第一次合并后应有且只有一行 header")
+
+        // 第二次合并：把其中一个键删掉，模拟下一次升级又缺一条
+        val shrunk = once.replace("town.accept.none:", "# removed:")
+        val twice = LangMerge.merge(shrunk, new).text
+        assertEquals(1, twice.lines().count { it.trim().startsWith(header) }, "第二次合并后 header 仍只能有一行")
+
+        // 幂等：键齐全时再合并不该改动任何东西
+        assertEquals(twice, LangMerge.merge(twice, new).text)
+    }
+
     @Test
     fun `run 会把 jar 内新增的键写进磁盘文件`() {
         val dir = kotlin.io.path.createTempDirectory("trtown-lang").toFile()

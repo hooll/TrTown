@@ -60,9 +60,10 @@ class SyncExecutorTest {
 
     @Test
     fun `AC-8 失败两次后成功，ensureMember 只成功调用一次`() {
-        val (townId, owner, _) = boundTown()
-        repos.tasks.listByTown(townId).forEach { repos.tasks.markDone(it.id) } // 先清掉 accept 的 GRANT
-        repos.tasks.enqueue(townId, 42, SyncAction.GRANT, owner, null, now)
+        // 目标必须是普通成员：M-30 之后，指向领地 owner 的 GRANT 会被直接收尾（owner 不是 member）
+        val (townId, _, guest) = boundTown()
+        repos.tasks.deleteByTown(townId) // 先清掉 accept 的 GRANT
+        repos.tasks.enqueue(townId, 42, SyncAction.GRANT, guest, null, now)
 
         fake.failTimes("putInGroup", 2)
         repeat(3) {
@@ -70,7 +71,7 @@ class SyncExecutorTest {
             now += 60_000
         }
 
-        val tasks = repos.tasks.listByTown(townId).filter { it.targetUuid == owner }
+        val tasks = repos.tasks.listByTown(townId).filter { it.targetUuid == guest }
         assertEquals(1, tasks.size)
         assertEquals(SyncState.DONE, tasks[0].state)
         assertEquals(1, fake.countOf("ensureMember"), "ensureMember 只应成功调用一次")
@@ -79,9 +80,9 @@ class SyncExecutorTest {
 
     @Test
     fun `AC-9 崩溃恢复：预置 PENDING 任务由新执行器跑完`() {
-        val (townId, owner, _) = boundTown()
-        repos.tasks.listByTown(townId).forEach { repos.tasks.markDone(it.id) }
-        repos.tasks.enqueue(townId, 42, SyncAction.GRANT, owner, null, now)
+        val (townId, _, guest) = boundTown()
+        repos.tasks.deleteByTown(townId)
+        repos.tasks.enqueue(townId, 42, SyncAction.GRANT, guest, null, now)
 
         val fresh = SyncExecutor(
             repos, fake,
@@ -89,7 +90,7 @@ class SyncExecutorTest {
         ) { now }
         fresh.runOnce()
 
-        assertEquals(SyncState.DONE, repos.tasks.listByTown(townId).filter { it.targetUuid == owner }.single().state)
+        assertEquals(SyncState.DONE, repos.tasks.listByTown(townId).filter { it.targetUuid == guest }.single().state)
     }
 
     @Test

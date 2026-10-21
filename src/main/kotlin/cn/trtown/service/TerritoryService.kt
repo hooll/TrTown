@@ -90,6 +90,8 @@ class TerritoryService(
 
         // 先入队 GRANT，再落 dominion_id
         repos.members.listByTown(town.id).forEach { m ->
+            // M-30：镇长就是领地 owner，Dominion 不允许把 owner 加成成员 —— 排这条任务只会永久重试
+            if (m.uuid == ref.ownerUuid) return@forEach
             repos.tasks.enqueue(town.id, ref.id, SyncAction.GRANT, m.uuid, null, clock())
         }
         repos.towns.updateDominion(town.id, ref.id)

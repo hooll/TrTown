@@ -39,6 +39,7 @@ object LangMerge {
      * 纯函数：把 [defaults] 里 [existing] 没有的键追加到末尾。
      *
      * 已有键**一律不动**（用户可能改过文案），也保留原有顺序。
+     * 上一次合并留下的 [HEADER] 会先被剔掉 —— 否则每补一次键就多一行注释（M-31）。
      */
     fun merge(existing: String, defaults: String): Plan {
         val have = keysOf(existing)
@@ -47,12 +48,20 @@ object LangMerge {
             .toList()
         if (missing.isEmpty()) return Plan(existing, emptyList())
 
-        val builder = StringBuilder(existing.trimEnd())
+        val builder = StringBuilder(stripHeader(existing))
         if (builder.isNotEmpty()) builder.append('\n')
         builder.append('\n').append(HEADER).append('\n')
         missing.forEach { builder.append(it.trim()).append('\n') }
         return Plan(builder.toString(), missing.mapNotNull { keyOf(it) })
     }
+
+    /** 剔除历史合并留下的 HEADER 行并收掉多余空行（保证反复合并是幂等的） */
+    private fun stripHeader(text: String): String =
+        text.lines()
+            .filter { it.trim() != HEADER }
+            .joinToString("\n")
+            .replace(Regex("\n{3,}"), "\n\n")
+            .trimEnd()
 
     /**
      * 启动时调用：读 jar 内 [resource]，补齐 [file] 缺失的键。

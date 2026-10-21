@@ -1,6 +1,7 @@
 package cn.trtown.dominion
 
 import cn.trtown.model.Grant
+import cn.trtown.model.Member
 import cn.trtown.model.PermsJson
 import cn.trtown.model.SyncAction
 import cn.trtown.model.SyncTask
@@ -73,6 +74,14 @@ class SyncExecutor(
             // 成员已退出，授权任务作废（撤销任务会由 leave/kick 入队）
             return
         }
+        // M-30：Dominion 的 **owner 不是 member**，也不能被加进组
+        // （真服日志：`You can't add dominion owner as a member.`）。
+        // 镇长凭 owner 身份已拥有全部权限，这条任务本身没有意义 —— 直接收尾，
+        // 否则它会以 PENDING 永久重试，每次打一屏堆栈。
+        if (ref.ownerUuid == uuid) {
+            recordOwnerNoop(task, member)
+            return
+        }
         val isMember = gateway.isMember(ref, uuid) ?: throw RetryLaterException("玩家不在 Dominion 缓存")
         val existing = repos.grants.find(task.townId, task.dominionId, uuid)
 
@@ -123,6 +132,30 @@ class SyncExecutor(
         }
     }
 
+    /**
+     * 为领地 owner 记一条**零副作用**账本行（M-30）。
+     *
+     * 目的是让 `Lifecycle.selfHeal` 的"没有账本记录就补一条 GRANT"不再每次入服都重新排任务；
+     * 撤销时这条行会被 `revoke` 直接删掉（`memberAdded`/`groupAdded` 全 false，不碰 Dominion）。
+     */
+    private fun recordOwnerNoop(task: SyncTask, member: Member) {
+        if (repos.grants.find(task.townId, task.dominionId, member.uuid) != null) return
+        repos.grants.upsert(
+            Grant(
+                townId = task.townId,
+                dominionId = task.dominionId,
+                uuid = member.uuid,
+                preMember = false,
+                preGroupId = 0,
+                appliedGroupId = 0,
+                appliedRole = member.role,
+                memberAdded = false,
+                groupAdded = false,
+                appliedAt = clock(),
+            ),
+        )
+    }
+
     private fun revoke(task: SyncTask) {
         val uuid = requireTarget(task)
         val grant = repos.grants.find(task.townId, task.dominionId, uuid) ?: return // I4：无账本不动
@@ -150,6 +183,9 @@ class SyncExecutor(
         val ref = requireRef(task)
         val uuid = requireTarget(task)
         val member = repos.members.find(task.townId, uuid) ?: return
+        // M-30 同源：owner 不在 Dominion 成员表里，`isMember` 恒为 false，
+        // 不拦的话转让镇长时（原镇长降为 MEMBER）这条任务也会永久重试。
+        if (ref.ownerUuid == uuid) return
         if (gateway.isMember(ref, uuid) == null) throw RetryLaterException("玩家不在 Dominion 缓存")
         if (gateway.isMember(ref, uuid) == false) throw RetryLaterException("玩家不在领地成员表")
 

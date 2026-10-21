@@ -82,6 +82,11 @@ class FakeDominionGateway : DominionGateway {
 
     override fun ensureMember(ref: DominionRef, uuid: UUID) {
         record("ensureMember", ref.id, uuid)
+        // 忠实复刻 Dominion 语义（M-30）：owner 不是 member，加进去会被拒绝。
+        // 替身不建模这条，就会像上次那样把最关键的路径整段掩盖掉。
+        if (ref.ownerUuid == uuid) {
+            throw DominionOpException("fake: You can't add dominion owner as a member.")
+        }
         val map = members.getOrPut(ref.id) { mutableMapOf() }
         map.putIfAbsent(uuid, -1)
     }
