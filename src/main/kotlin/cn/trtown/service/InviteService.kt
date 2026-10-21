@@ -10,6 +10,38 @@ import cn.trtown.model.TownState
 import java.util.UUID
 
 /**
+ * 一条"待处理邀请"的展示视图（PLAN §5.15，M-25）。
+ *
+ * 带上镇名是因为无参 `/tt accept` 要直接回「已加入小镇：X」、≥2 条时要列出镇名，
+ * 而 `Invite` 只有 `townId`；在服务层一次查完，命令层不必再回表。
+ */
+data class PendingInvite(val townId: Int, val townName: String, val inviterUuid: UUID)
+
+/**
+ * 无参 `/tt accept` / `/tt deny` 的选择结果（PLAN §5.15 / R30）。
+ *
+ * 抽成纯函数是为了让"≥2 条绝不自动选"这条规则**可断言**：
+ * 命令层一碰 `Cmd.player` / `Cmd.reply` 就没法在无 Bukkit 的单测里跑，
+ * 但"选哪一条"的决策本身是纯逻辑，不该跟着一起变成不可测。
+ */
+sealed interface InviteChoice {
+    /** 没有待处理邀请 */
+    data object None : InviteChoice
+
+    /** 只有一条 → 直接处理 */
+    data class Single(val invite: PendingInvite) : InviteChoice
+
+    /** 两条以上 → 只列出来，让玩家点明（选错镇要退镇再进，代价远大于多敲四个字） */
+    data class Ambiguous(val invites: List<PendingInvite>) : InviteChoice
+}
+
+fun chooseInvite(invites: List<PendingInvite>): InviteChoice = when {
+    invites.isEmpty() -> InviteChoice.None
+    invites.size == 1 -> InviteChoice.Single(invites.single())
+    else -> InviteChoice.Ambiguous(invites)
+}
+
+/**
  * 邀请：邀请 / 接受 / 拒绝 / 过期清理。
  *
  * 纯 Kotlin，同步阻塞；调用方必须在异步线程执行。
@@ -39,12 +71,34 @@ class InviteService(
         if (existing != null) {
             repos.invites.refreshExpiry(existing.id, expiresAt)
             repos.audit.append(actor, town.id, "invite-refresh", "$target", now)
+            // M-25：重复邀请也算"对方被邀请了"，必须再提示一次（他很可能没看到上一次）
+            NotifyHooks.invited(target, town.name, actor)
             return existing.copy(expiresAt = expiresAt)
         }
         val invite = repos.invites.insert(town.id, target, actor, now, expiresAt)
         repos.audit.append(actor, town.id, "invite", "$target", now)
         SuggestHooks.pendingChanged(target)
+        // M-25：被邀请人必须当场看到提示（投递在接线层，服务层只发钩子）
+        NotifyHooks.invited(target, town.name, actor)
         return invite
+    }
+
+    /**
+     * 某人的待处理邀请（PLAN §5.15 硬规则 3）。
+     *
+     * **惰性过期**：读出来时若已过 `expiresAt`，就地置 `EXPIRED` 且**不计入返回值**。
+     * 不做这一步的话，清理任务最长 5 分钟才跑一次，会出现"提示 1 条待处理 → 接受时说已过期"。
+     */
+    fun pendingOf(target: UUID): List<PendingInvite> {
+        val now = clock()
+        return repos.invites.listPendingByTarget(target).mapNotNull { invite ->
+            if (now > invite.expiresAt) {
+                repos.invites.updateStatus(invite.id, InviteStatus.EXPIRED)
+                return@mapNotNull null
+            }
+            val town = repos.towns.findById(invite.townId) ?: return@mapNotNull null
+            PendingInvite(town.id, town.name, invite.inviterUuid)
+        }
     }
 
     /** 接受邀请：过期的置 EXPIRED 并拒绝；已在其他镇、镇已解散、人数满都拒绝 */

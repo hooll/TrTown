@@ -7,8 +7,10 @@ import cn.trtown.dominion.FlagConfig
 import cn.trtown.model.TownRole
 import cn.trtown.papi.TrTownPlaceholders
 import cn.trtown.platform.Lifecycle
+import cn.trtown.platform.Notify
 import cn.trtown.platform.PlatformScheduler
 import cn.trtown.platform.Players
+import cn.trtown.service.NotifyHooks
 import cn.trtown.service.Repos
 import cn.trtown.service.SuggestHooks
 import cn.trtown.store.Storage
@@ -64,6 +66,13 @@ object TrTown : Plugin() {
         SuggestHooks.onlineNames = { Players.onlineNames() }
         SuggestCache.installHooks()
         SuggestCache.reloadFlagsFromSettings()
+        // M-25：玩家消息接线。服务层只发钩子，投递统一走 platform/Notify（切目标玩家 region 线程）
+        NotifyHooks.onInvited = { target, townName, inviterUuid ->
+            Notify.send(target, "town.invite.received", townName, Players.nameOf(inviterUuid))
+        }
+        NotifyHooks.onJoinReminder = { target, townNames ->
+            Notify.send(target, "town.invite.join-reminder", townNames.size, townNames.joinToString("、"))
+        }
 
         // 建池 + 建表必须异步：submitAsync(now = true) 会在调用线程同步执行（AC-29）
         PlatformScheduler.runAsync(delayTicks = 1) {

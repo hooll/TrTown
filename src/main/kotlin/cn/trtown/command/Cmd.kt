@@ -46,8 +46,9 @@ object Cmd {
                 } catch (ex: TownException) {
                     reply(sender, "§c${ex.message}")
                 } catch (ex: Throwable) {
+                    // M-24：给玩家的只是一句摘要，完整堆栈必须进日志
                     reply(sender, "§c操作失败：${ex.javaClass.simpleName}: ${ex.message}")
-                    ex.printStackTrace()
+                    cn.trtown.platform.Log.failure("命令执行", ex)
                 }
             }
         } finally {

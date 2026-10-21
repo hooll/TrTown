@@ -65,6 +65,22 @@ object PlatformScheduler : Scheduler {
         }
     }
 
+    /**
+     * 当前线程是不是**全局线程**（PLAN §5.14）。
+     *
+     * Folia 上命令线程是 region 线程、不等于全局线程，所以不能用 `isPrimaryThread()` 代替；
+     * 非 Folia（Paper）退化成主线程判断。
+     */
+    fun isGlobalThread(): Boolean = if (isFolia) Bukkit.isGlobalTickThread() else Bukkit.isPrimaryThread()
+
+    /** 把任务丢到全局线程（[GlobalBridge] 的 dispatch 接线，见 [dominionBridge]） */
+    fun dispatchGlobal(task: () -> Unit) {
+        runGlobal(0, task)
+    }
+
+    /** Dominion 写操作用的桥（M-23 / AC-49） */
+    fun dominionBridge(): GlobalBridge.Bridge = GlobalBridge.bind(::isGlobalThread, ::dispatchGlobal)
+
     /** 主线程上下文：打标记，主线程上的 DB 访问会被 [ThreadGuard] 拦下 */
     private fun guarded(task: () -> Unit) {
         ThreadGuard.enterMain()

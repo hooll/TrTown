@@ -5,8 +5,10 @@ import cn.trtown.dominion.DominionApiGateway
 import cn.trtown.dominion.DominionConfig
 import cn.trtown.model.Invite
 import cn.trtown.platform.Players
+import cn.trtown.service.InviteChoice
 import cn.trtown.service.InviteService
 import cn.trtown.service.MembershipService
+import cn.trtown.service.PendingInvite
 import cn.trtown.service.PermissionService
 import cn.trtown.service.PrefixService
 import cn.trtown.service.Repos
@@ -15,6 +17,7 @@ import cn.trtown.service.TownError
 import cn.trtown.service.TownException
 import cn.trtown.service.TownRules
 import cn.trtown.service.TownService
+import cn.trtown.service.chooseInvite
 import taboolib.common.platform.ProxyCommandSender
 import taboolib.common.platform.command.CommandContext
 import java.util.UUID
@@ -112,6 +115,58 @@ internal object Cmds {
         Cmd.reply(sender, "§c用法：/trtown perm <玩家> <flag> <on|off|reset>")
     }
 
+    // ---- 邀请处理（PLAN §5.15 / M-25；无参时自动选唯一一条，≥2 绝不自动选 —— R30） ----
+
+    fun doAccept(sender: ProxyCommandSender, townName: String?) {
+        Cmd.player(sender) { player ->
+            Cmd.run(sender) {
+                if (townName != null) {
+                    // 带参路径行为完全不变
+                    val invite = inviteFor(player.uniqueId, townName)
+                    invites().accept(player.uniqueId, invite.townId)
+                    Cmd.replyKey(sender, "town.accept.success", townName)
+                } else {
+                    when (val choice = chooseInvite(invites().pendingOf(player.uniqueId))) {
+                        is InviteChoice.None -> Cmd.replyKey(sender, "town.accept.none")
+                        is InviteChoice.Single -> {
+                            invites().accept(player.uniqueId, choice.invite.townId)
+                            Cmd.replyKey(sender, "town.accept.success", choice.invite.townName)
+                        }
+                        // 选错镇要退镇再进，代价远大于多敲四个字 → 只列出来
+                        is InviteChoice.Ambiguous ->
+                            Cmd.replyKey(sender, "town.accept.multi", choice.invites.size, townNames(choice.invites))
+                    }
+                }
+            }
+        }
+    }
+
+    fun doDeny(sender: ProxyCommandSender, townName: String?) {
+        Cmd.player(sender) { player ->
+            Cmd.run(sender) {
+                if (townName != null) {
+                    val invite = inviteFor(player.uniqueId, townName)
+                    invites().deny(player.uniqueId, invite.townId)
+                    Cmd.replyKey(sender, "town.deny.success", townName)
+                } else {
+                    when (val choice = chooseInvite(invites().pendingOf(player.uniqueId))) {
+                        is InviteChoice.None -> Cmd.replyKey(sender, "town.deny.none")
+                        is InviteChoice.Single -> {
+                            invites().deny(player.uniqueId, choice.invite.townId)
+                            Cmd.replyKey(sender, "town.deny.success", choice.invite.townName)
+                        }
+                        is InviteChoice.Ambiguous ->
+                            Cmd.replyKey(sender, "town.deny.multi", choice.invites.size, townNames(choice.invites))
+                    }
+                }
+            }
+        }
+    }
+
+    /** 镇名列表的展示格式（`、` 连接，与消息键 `{1}` 对应） */
+    private fun townNames(pending: List<PendingInvite>): String =
+        pending.joinToString("、") { it.townName }
+
     // ---- 帮助（`/trtown`、`/tt`、`/trtown help` 共用同一实现，禁止文案漂移） ----
 
     fun sendHelp(sender: ProxyCommandSender) {
@@ -122,7 +177,7 @@ internal object Cmds {
         "§b§lTrTown §7帮助",
         "§7/trtown create <镇名> §8- 建镇",
         "§7/trtown invite|kick|transfer|setrole <玩家> §8- 成员管理",
-        "§7/trtown accept|deny <镇名> §8- 处理邀请",
+        "§7/trtown accept|deny [镇名] §8- 处理邀请（不带镇名＝只有一条时直接处理）",
         "§7/trtown leave §8- 退出小镇（镇长需先转让）",
         "§7/trtown setprefix <文本> §8- 改前缀（管理/镇长）",
         "§7/trtown setterritory [领地] | unsetterritory §8- 绑定/解绑主领地（镇长）",

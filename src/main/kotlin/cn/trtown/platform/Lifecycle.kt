@@ -7,6 +7,7 @@ import cn.trtown.dominion.SyncSettings
 import cn.trtown.model.SyncAction
 import cn.trtown.papi.PlaceholderCache
 import cn.trtown.service.InviteService
+import cn.trtown.service.NotifyHooks
 import cn.trtown.service.Repos
 import cn.trtown.service.TownRules
 import cn.trtown.service.TownService
@@ -16,7 +17,6 @@ import org.bukkit.event.Listener
 import org.bukkit.event.player.PlayerJoinEvent
 import org.bukkit.event.player.PlayerQuitEvent
 import taboolib.common.platform.function.submitAsync
-import taboolib.common.platform.function.warning
 
 /**
  * 生命周期（PLAN §5.9 / W8）。
@@ -36,7 +36,7 @@ object Lifecycle {
                     val rules = TownRules.fromSettings()
                     val towns = TownService(repos, rules)
                     SyncExecutor(repos, DominionApiGateway(), SyncSettings.fromSettings(), towns).runOnce()
-                }.onFailure { warning("[同步] 执行失败: ${it.javaClass.simpleName}: ${it.message}") }
+                }.onFailure { Log.failure("[同步] 执行失败", it) }
             } finally {
                 running.set(false)
             }
@@ -50,11 +50,11 @@ object Lifecycle {
                 val repos = Repos.fromStorage()
                 InviteService(repos, TownRules.fromSettings()).expireOverdue()
                 cn.trtown.command.SuggestCache.refreshTownsAsync()
-            }.onFailure { warning("[邀请] 清理失败: ${it.message}") }
+            }.onFailure { Log.failure("[邀请] 清理失败", it) }
         }
     }
 
-    /** 入服自愈 + 缓存刷新 */
+    /** 入服自愈 + 缓存刷新 + 离线邀请汇总提醒 */
     fun registerListener() {
         Bukkit.getPluginManager().registerEvents(object : Listener {
 
@@ -65,7 +65,9 @@ object Lifecycle {
                 SuggestCache.refreshPendingAsync(uuid)
                 SuggestCache.refreshTerritoriesAsync(uuid)
                 PlatformScheduler.runAsync(delayTicks = 20) {
-                    runCatching { selfHeal(uuid) }
+                    runCatching { selfHeal(uuid) }.onFailure { Log.failure("入服自愈", it) }
+                    // M-25：邀请发出时对方很可能不在线，只做"当场提示"在离线场景仍然不成立
+                    runCatching { remindPendingInvites(uuid) }.onFailure { Log.failure("入服邀请提醒", it) }
                 }
             }
 
@@ -74,6 +76,18 @@ object Lifecycle {
                 PlaceholderCache.invalidate(event.player.uniqueId)
             }
         }, Bukkit.getPluginManager().getPlugin("TrTown") ?: return)
+    }
+
+    /**
+     * 入服汇总提醒（PLAN §5.15 硬规则 4）。
+     *
+     * 查库在异步线程（本方法由 `runAsync` 调进来），投递由 [NotifyHooks] 接到 `Notify.send`
+     * 再切玩家 region 线程 —— 两步**不能**混在一个 lambda 里（R29）。
+     */
+    private fun remindPendingInvites(uuid: java.util.UUID) {
+        val pending = InviteService(Repos.fromStorage(), TownRules.fromSettings()).pendingOf(uuid)
+        if (pending.isEmpty()) return
+        NotifyHooks.joinReminder(uuid, pending.map { it.townName })
     }
 
     /** 成员所属镇已绑定领地但没有账本记录 → 补一条 GRANT */

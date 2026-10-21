@@ -12,7 +12,7 @@ import java.util.UUID
  */
 object SuggestHooks {
 
-    /** 在线玩家名（AC-47 的唯一入口；命令层禁止直接调 `Bukkit.getOnlinePlayers`） */
+    /** 在线玩家名（AC-47 的唯一入口；命令层禁止直接调 `Bukkit#getOnlinePlayers`） */
     @Volatile
     var onlineNames: () -> List<String> = { emptyList() }
 

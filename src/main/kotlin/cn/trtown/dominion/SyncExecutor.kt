@@ -54,6 +54,8 @@ class SyncExecutor(
     }
 
     private fun onFailure(task: SyncTask, ex: Exception) {
+        // M-24：重试次数与退避写进库，堆栈进日志——两者都要，缺一个都查不动线上问题
+        cn.trtown.platform.Log.failure("同步任务 ${task.action}#${task.id}", ex)
         val attempts = task.attempts + 1
         val dead = attempts >= settings.maxAttempts
         val backoff = settings.backoffSeconds.getOrElse(attempts - 1) { settings.backoffSeconds.lastOrNull() ?: 5L }

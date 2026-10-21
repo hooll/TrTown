@@ -135,34 +135,21 @@ internal object CmdInvite {
 
 internal object CmdAccept {
     val command = subCommand {
+        // 无参：0 条 → 提示；1 条 → 直接加入；≥2 条 → 只列镇名（PLAN §5.15 / R30）
+        execute<ProxyCommandSender> { sender, _, _ -> Cmds.doAccept(sender, null) }
         dynamic("town") {
             suggestUncheck { Suggestions.pendingInvites(SuggestCache.pendingInvites(Cmds.uuidOf(sender))) }
-            execute<ProxyCommandSender> { sender, ctx, _ ->
-                Cmd.player(sender) { player ->
-                    Cmd.run(sender) {
-                        val invite = Cmds.inviteFor(player.uniqueId, ctx["town"])
-                        Cmds.invites().accept(player.uniqueId, invite.townId)
-                        Cmd.replyKey(sender, "town.accept.success", ctx["town"])
-                    }
-                }
-            }
+            execute<ProxyCommandSender> { sender, ctx, _ -> Cmds.doAccept(sender, ctx["town"]) }
         }
     }
 }
 
 internal object CmdDeny {
     val command = subCommand {
+        execute<ProxyCommandSender> { sender, _, _ -> Cmds.doDeny(sender, null) }
         dynamic("town") {
             suggestUncheck { Suggestions.pendingInvites(SuggestCache.pendingInvites(Cmds.uuidOf(sender))) }
-            execute<ProxyCommandSender> { sender, ctx, _ ->
-                Cmd.player(sender) { player ->
-                    Cmd.run(sender) {
-                        val invite = Cmds.inviteFor(player.uniqueId, ctx["town"])
-                        Cmds.invites().deny(player.uniqueId, invite.townId)
-                        Cmd.replyKey(sender, "town.deny.success", ctx["town"])
-                    }
-                }
-            }
+            execute<ProxyCommandSender> { sender, ctx, _ -> Cmds.doDeny(sender, ctx["town"]) }
         }
     }
 }

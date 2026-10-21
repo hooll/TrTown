@@ -50,7 +50,7 @@ class CommandTreeTest {
     )
 
     /** 按 `SimpleCommand.kt:146-152` 的方式把 body 挂成 literal */
-    private fun buildTree(): CommandBase {
+    internal fun buildTree(): CommandBase {
         val root = CommandBase()
         bodies.forEach { (name, body) ->
             root.literal(name) { body.func(this) }
@@ -84,7 +84,7 @@ class CommandTreeTest {
         required.forEach { path ->
             val component = resolve(root, path)
             assertNotNull(component, "找不到节点 $path")
-            assertTrue(hasSuggestion(component!!), "$path 缺少补全")
+            assertTrue(hasSuggestion(component), "$path 缺少补全")
             assertEquals(true, suggestionUncheck(component), "$path 的补全必须是 uncheck=true")
         }
     }
@@ -94,7 +94,7 @@ class CommandTreeTest {
         val root = buildTree()
         listOf("create/name", "setprefix/text").forEach { path ->
             val component = assertNotNull(resolve(root, path), "找不到节点 $path")
-            assertFalse(hasSuggestion(component!!), "$path 是自由文本，不该有补全")
+            assertFalse(hasSuggestion(component), "$path 是自由文本，不该有补全")
         }
     }
 
@@ -109,13 +109,13 @@ class CommandTreeTest {
         val root = buildTree()
         listOf("perm", "perm/player", "perm/player/flag").forEach { path ->
             val component = assertNotNull(resolve(root, path), "找不到节点 $path")
-            assertTrue(hasExecutor(component!!), "$path 缺 executor：缺参输入会打印『未知或不完整的命令』")
+            assertTrue(hasExecutor(component), "$path 缺 executor：缺参输入会打印『未知或不完整的命令』")
         }
 
         // 子节点必须被上面三个 executor 顶成 optional，否则带参输入会被判成"多余参数"
         listOf("perm/player", "perm/player/flag", "perm/player/flag/value").forEach { path ->
             val component = assertNotNull(resolve(root, path), "找不到节点 $path")
-            assertTrue(component!!.optional, "$path 应为 optional（由父节点 executor 隐式决定）")
+            assertTrue(component.optional, "$path 应为 optional（由父节点 executor 隐式决定）")
         }
     }
 
@@ -134,7 +134,7 @@ class CommandTreeTest {
         }
     }
 
-    private fun resolve(root: CommandBase, path: String): CommandComponent? {
+    internal fun resolve(root: CommandBase, path: String): CommandComponent? {
         var current: CommandComponent? = root
         path.split('/').forEach { name ->
             val parent = current ?: return null
@@ -149,7 +149,7 @@ class CommandTreeTest {
         return current
     }
 
-    private fun hasExecutor(component: CommandComponent): Boolean =
+    internal fun hasExecutor(component: CommandComponent): Boolean =
         readInternal(component, "getCommandExecutor\$common_platform_api") != null
 
     private fun hasSuggestion(component: CommandComponent): Boolean =

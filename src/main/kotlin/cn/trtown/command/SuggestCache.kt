@@ -6,7 +6,6 @@ import cn.trtown.dominion.DominionGateway
 import cn.trtown.service.Repos
 import cn.trtown.service.SuggestHooks
 import cn.trtown.platform.PlatformScheduler
-import taboolib.common.platform.function.warning
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
@@ -59,7 +58,7 @@ object SuggestCache {
             try {
                 towns = Repos.fromStorage().towns.listActive().map { it.name }
             } catch (ex: Throwable) {
-                warning("[补全] 镇名缓存刷新失败: ${ex.message}")
+                cn.trtown.platform.Log.failure("[补全] 镇名缓存刷新失败", ex)
             } finally {
                 townsBusy.set(false)
             }
@@ -76,7 +75,7 @@ object SuggestCache {
                 }
                 pendingInvites[uuid] = names
             } catch (ex: Throwable) {
-                warning("[补全] 邀请缓存刷新失败: ${ex.message}")
+                cn.trtown.platform.Log.failure("[补全] 邀请缓存刷新失败", ex)
             } finally {
                 pendingBusy.set(false)
             }
@@ -89,7 +88,7 @@ object SuggestCache {
             try {
                 territories[uuid] = gateway().ownedNames(uuid)
             } catch (ex: Throwable) {
-                warning("[补全] 领地名缓存刷新失败: ${ex.message}")
+                cn.trtown.platform.Log.failure("[补全] 领地名缓存刷新失败", ex)
             } finally {
                 territoriesBusy.set(false)
             }

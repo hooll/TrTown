@@ -76,7 +76,12 @@ class TerritoryService(
                 )
             }
         } catch (ex: Exception) {
-            created.forEach { runCatching { gateway.deleteGroupIfEmpty(ref, it) } }
+            // M-24：回滚前先把真实堆栈留下（线上只看到一句 message 的教训见 PLAN §5.14）
+            cn.trtown.platform.Log.failure("绑定领地 ${ref.name}#${ref.id} 建组", ex)
+            created.forEach { id ->
+                runCatching { gateway.deleteGroupIfEmpty(ref, id) }
+                    .onFailure { cn.trtown.platform.Log.failure("回滚删除组 $id", it) }
+            }
             throw TownException(TownError.DOMINION_BIND_FAILED, ex.message)
         }
 
