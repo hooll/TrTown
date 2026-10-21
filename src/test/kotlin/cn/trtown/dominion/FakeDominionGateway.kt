@@ -105,4 +105,9 @@ class FakeDominionGateway : DominionGateway {
         record("setMemberFlag", ref.id, uuid, flag, value)
         memberFlags.getOrPut(ref.id to uuid) { mutableMapOf() }[flag] = value
     }
+
+    /** 测试里预置"某人名下的领地" */
+    val ownedByName = mutableMapOf<UUID, MutableList<String>>()
+
+    override fun ownedNames(uuid: UUID): List<String> = ownedByName[uuid] ?: emptyList()
 }

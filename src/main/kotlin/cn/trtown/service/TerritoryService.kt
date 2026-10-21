@@ -86,6 +86,7 @@ class TerritoryService(
         }
         repos.towns.updateDominion(town.id, ref.id)
         repos.audit.append(actor, town.id, "setterritory", "${ref.name}#${ref.id}", clock())
+        SuggestHooks.territoriesChanged(actor)
         return town.copy(dominionId = ref.id)
     }
 
@@ -105,6 +106,7 @@ class TerritoryService(
         repos.groups.deleteByTown(town.id)
         repos.towns.updateDominion(town.id, null)
         repos.audit.append(actor, town.id, "unsetterritory", "#$dominionId", clock())
+        SuggestHooks.territoriesChanged(actor)
         return town.copy(dominionId = null)
     }
 

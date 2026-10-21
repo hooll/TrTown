@@ -1,6 +1,6 @@
 package cn.trtown
 
-import cn.trtown.command.TownCommand
+import cn.trtown.command.SuggestCache
 import cn.trtown.dominion.ConfigException
 import cn.trtown.dominion.DominionConfig
 import cn.trtown.dominion.FlagConfig
@@ -8,7 +8,9 @@ import cn.trtown.model.TownRole
 import cn.trtown.papi.TrTownPlaceholders
 import cn.trtown.platform.Lifecycle
 import cn.trtown.platform.PlatformScheduler
+import cn.trtown.platform.Players
 import cn.trtown.service.Repos
+import cn.trtown.service.SuggestHooks
 import cn.trtown.store.Storage
 import org.bukkit.Bukkit
 import taboolib.common.platform.Plugin
@@ -53,10 +55,15 @@ object TrTown : Plugin() {
         // AC-27：风险必须看得见
         warning("管理拥有领地大小 / 改名 / 子领地操作权，且 Dominion 无撤销——管理只给信得过的人")
 
-        TownCommand.register()
+        // 命令层：由 TabooLib 的 `@CommandHeader` / `@CommandBody` 注解在 ENABLE 阶段自动注册，
+        // 这里不再手动 register()（PLAN §5.6.2 硬约束 4）。
         Lifecycle.registerListener()
         // M-15：服务层变更（建镇/入镇/退镇/改角色/改前缀/解散）要能立刻刷新 PAPI 缓存
         cn.trtown.papi.PlaceholderCache.installHooks()
+        // M-21：补全数据接线（在线玩家名 / 镇名 / 邀请 / 领地 / flag 快照）
+        SuggestHooks.onlineNames = { Players.onlineNames() }
+        SuggestCache.installHooks()
+        SuggestCache.reloadFlagsFromSettings()
 
         // 建池 + 建表必须异步：submitAsync(now = true) 会在调用线程同步执行（AC-29）
         PlatformScheduler.runAsync(delayTicks = 1) {
@@ -68,6 +75,7 @@ object TrTown : Plugin() {
                     Lifecycle.startInviteCleanup()
                     // 启动恢复：把 PENDING 任务拉到现在
                     Repos.fromStorage().tasks.wakeAllPending()
+                    SuggestCache.refreshTownsAsync()
                     // PAPI 扩展（软依赖）
                     if (Bukkit.getPluginManager().getPlugin("PlaceholderAPI") != null) {
                         TrTownPlaceholders().register()

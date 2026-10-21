@@ -51,4 +51,7 @@ interface DominionGateway {
 
     /** 个人 flag（R12 结论：成员在组内时不生效，默认功能关闭） */
     fun setMemberFlag(ref: DominionRef, uuid: UUID, flag: String, value: Boolean)
+
+    /** 该玩家名下（owner）的领地名，用于 Tab 补全。只在异步线程调用。 */
+    fun ownedNames(uuid: UUID): List<String>
 }

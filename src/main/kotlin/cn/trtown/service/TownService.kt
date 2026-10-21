@@ -45,6 +45,8 @@ class TownService(
         repos.audit.append(actor, town.id, "create", trimmed, now)
         // M-15：入服时可能已写入 60 s 负缓存，建镇后必须立刻失效
         CacheHooks.invalidate(actor)
+        SuggestHooks.townsChanged()
+        SuggestHooks.pendingChanged(actor)
         return town
     }
 
@@ -84,6 +86,7 @@ class TownService(
         repos.audit.append(actor, town.id, "transfer", "$actor -> $target", clock())
         CacheHooks.invalidate(target)
         CacheHooks.invalidate(actor)
+        SuggestHooks.townsChanged()
         return repos.towns.findById(town.id) ?: town.copy(ownerUuid = target)
     }
 
@@ -117,6 +120,7 @@ class TownService(
         repos.audit.append(actor, town.id, "disband", town.name, now)
         // M-15：解散后所有原成员的前缀/角色都必须失效
         disbanded.forEach { CacheHooks.invalidate(it.uuid) }
+        SuggestHooks.townsChanged()
         // 没有绑定领地 → 没有同步任务 → 立即收尾
         if (town.dominionId == null) finalizeDisband(town.id)
         return town.copy(state = TownState.DISBANDED)

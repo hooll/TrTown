@@ -43,6 +43,7 @@ class InviteService(
         }
         val invite = repos.invites.insert(town.id, target, actor, now, expiresAt)
         repos.audit.append(actor, town.id, "invite", "$target", now)
+        SuggestHooks.pendingChanged(target)
         return invite
     }
 
@@ -67,6 +68,7 @@ class InviteService(
         repos.audit.append(target, town.id, "accept", invite.inviterUuid.toString(), now)
         // M-15：入服时可能写过 60 s 负缓存，接受邀请后必须立刻失效
         CacheHooks.invalidate(target)
+        SuggestHooks.pendingChanged(target)
         return member
     }
 
@@ -75,6 +77,7 @@ class InviteService(
             ?: throw TownException(TownError.INVITE_NOT_FOUND)
         repos.invites.updateStatus(invite.id, InviteStatus.DECLINED)
         repos.audit.append(target, townId, "deny", invite.inviterUuid.toString(), clock())
+        SuggestHooks.pendingChanged(target)
     }
 
     /** 常驻任务：清理过期邀请，返回受影响行数 */

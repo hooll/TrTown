@@ -102,6 +102,9 @@ class DominionApiGateway : DominionGateway {
         await(MemberProvider.getInstance().setMemberFlag(console, dom, member, pri, value), "member.setMemberFlag")
     }
 
+    override fun ownedNames(uuid: UUID): List<String> =
+        runCatching { api.getPlayerOwnDominionDTOs(uuid).map { it.name } }.getOrDefault(emptyList())
+
     // ---- 内部 ----
 
     private fun dom(ref: DominionRef): DominionDTO? = api.getDominion(ref.id)

@@ -78,4 +78,14 @@ object Cmd {
     fun replyKey(sender: ProxyCommandSender, key: String, vararg args: Any?) {
         reply(sender, Messages.get(key, *args))
     }
+
+    /**
+     * 发送者 UUID（补全用）。
+     *
+     * 走 [ProxyCommandSender] 的 `origin` 再交给 `Players`，**不直接引用 Bukkit 类型**：
+     * 命令目录一旦 `import org.bukkit.entity.Player`，单测（无 Bukkit）就会
+     * `NoClassDefFoundError`，也违反 AC-48 ② 的可测性契约。
+     */
+    fun uuidOf(sender: ProxyCommandSender): java.util.UUID? =
+        cn.trtown.platform.Players.uuidOf(sender.origin)
 }

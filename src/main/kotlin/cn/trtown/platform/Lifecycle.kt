@@ -1,5 +1,6 @@
 package cn.trtown.platform
 
+import cn.trtown.command.SuggestCache
 import cn.trtown.dominion.DominionApiGateway
 import cn.trtown.dominion.SyncExecutor
 import cn.trtown.dominion.SyncSettings
@@ -42,12 +43,13 @@ object Lifecycle {
         }
     }
 
-    /** 邀请过期清理 */
+    /** 邀请过期清理（同时刷新补全用的镇名缓存，不新增常驻任务） */
     fun startInviteCleanup(periodTicks: Long = 6000L) {
         submitAsync(delay = periodTicks, period = periodTicks) {
             runCatching {
                 val repos = Repos.fromStorage()
                 InviteService(repos, TownRules.fromSettings()).expireOverdue()
+                cn.trtown.command.SuggestCache.refreshTownsAsync()
             }.onFailure { warning("[邀请] 清理失败: ${it.message}") }
         }
     }
@@ -60,6 +62,8 @@ object Lifecycle {
             fun onJoin(event: PlayerJoinEvent) {
                 val uuid = event.player.uniqueId
                 PlaceholderCache.refreshAsync(uuid)
+                SuggestCache.refreshPendingAsync(uuid)
+                SuggestCache.refreshTerritoriesAsync(uuid)
                 PlatformScheduler.runAsync(delayTicks = 20) {
                     runCatching { selfHeal(uuid) }
                 }
