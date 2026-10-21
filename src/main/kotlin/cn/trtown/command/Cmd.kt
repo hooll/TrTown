@@ -28,6 +28,11 @@ object Messages {
         return text.colored()
     }
 
+    /** 合并过语言键之后重读磁盘文件（未初始化时什么都不做，首次访问会读合并后的版本） */
+    fun reloadIfLoaded() {
+        if (::lang.isInitialized) runCatching { lang.reload() }
+    }
+
     fun send(sender: ProxyCommandSender, key: String, vararg args: Any?) {
         sender.sendMessage(get(key, *args))
     }

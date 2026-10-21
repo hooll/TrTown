@@ -36,7 +36,7 @@ permissions:
   # 个人 flag 只在 member.groupId == -1 时生效。因此"个人权限覆写"在本服**不可用**，
   # 默认关闭。改成 true 也不会生效，只会让玩家以为设置成功（R18 明确禁止）。
   allow-override: false
-  editable-flags: [teleport, fly, pvp, ignite, hopper, container, chest, door, button, lever,
+  editable-flags: [teleport, fly, pvp, ignite, hopper, chest, door, button, lever,
                    place, break, craft, enchant, pick_up, drop_item]
   aliases:
     传送: teleport
@@ -45,7 +45,6 @@ permissions:
     点燃: ignite
     漏斗: hopper
     箱子: chest
-    容器: container
     门: door
     按钮: button
     拉杆: lever
@@ -67,7 +66,6 @@ dominion:
     MEMBER:
       place: true
       break: true
-      container: true
       chest: true
       door: true
       trapdoor: true

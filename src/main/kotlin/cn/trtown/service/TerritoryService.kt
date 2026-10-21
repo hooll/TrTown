@@ -78,10 +78,13 @@ class TerritoryService(
         } catch (ex: Exception) {
             // M-24：回滚前先把真实堆栈留下（线上只看到一句 message 的教训见 PLAN §5.14）
             cn.trtown.platform.Log.failure("绑定领地 ${ref.name}#${ref.id} 建组", ex)
+            // M-27：两侧都要收干净 —— Dominion 侧已建的组 + TrTown 自己的账本行。
+            // 只清账本会留下"半成品组"，下次绑定时 ensureGroup 的 existing 分支会命中它。
             created.forEach { id ->
                 runCatching { gateway.deleteGroupIfEmpty(ref, id) }
                     .onFailure { cn.trtown.platform.Log.failure("回滚删除组 $id", it) }
             }
+            repos.groups.deleteByTown(town.id)
             throw TownException(TownError.DOMINION_BIND_FAILED, ex.message)
         }
 

@@ -54,24 +54,40 @@ class DominionApiGateway(
 
     override fun ensureGroup(ref: DominionRef, role: TownRole, name: String, flags: Map<String, Boolean>): GroupRef {
         val dom = dom(ref) ?: throw DominionOpException("领地 ${ref.id} 不存在")
+        // M-27：**先**校验 flag 名，再 createGroup。
+        // 顺序反过来就会留下孤儿组：createGroup 成功 → 某条 setGroupFlag 因非法名失败 →
+        // ensureGroup 抛异常，调用方的"本次创建的组"列表里根本没有这个 id，回滚删不掉。
+        val illegal = FlagNames.illegal(flags)
+        if (illegal.isNotEmpty()) {
+            throw DominionOpException("未知 privilege flag: ${illegal.joinToString("、")}")
+        }
         val existing = dom.groups.firstOrNull { it.namePlain == name }
         // 写操作 1/8：createGroup（内部 fire GroupCreateEvent）
         val group = existing ?: bridge.run("createGroup($name)") {
             await(GroupProvider.getInstance().createGroup(console, dom, name), "createGroup($name)")
         }
         if (flags.isNotEmpty()) {
-            // 写操作 2/8：setGroupFlag（内部 fire GroupFlagEvent）；同一组的 flag 只切一次全局线程
-            bridge.run("setGroupFlag($name)") {
-                flags.forEach { (flagName, value) ->
-                    val flag = Flags.getPreFlag(flagName)
-                        ?: throw DominionOpException("未知 privilege flag: $flagName")
-                    if (group.getFlagValue(flag) != value) {
-                        await(
-                            GroupProvider.getInstance().setGroupFlag(console, dom, group, flag, value),
-                            "setGroupFlag($name,$flagName)",
-                        )
+            try {
+                // 写操作 2/8：setGroupFlag（内部 fire GroupFlagEvent）；同一组的 flag 只切一次全局线程
+                bridge.run("setGroupFlag($name)") {
+                    flags.forEach { (flagName, value) ->
+                        val flag = Flags.getPreFlag(flagName)
+                            ?: throw DominionOpException("未知 privilege flag: $flagName")
+                        if (group.getFlagValue(flag) != value) {
+                            await(
+                                GroupProvider.getInstance().setGroupFlag(console, dom, group, flag, value),
+                                "setGroupFlag($name,$flagName)",
+                            )
+                        }
                     }
                 }
+            } catch (ex: Throwable) {
+                // 兜底：写 flag 阶段真失败了，把本次刚建的组收掉，别留半成品（M-27）
+                if (existing == null) {
+                    runCatching { deleteGroupIfEmpty(ref, group.id) }
+                        .onFailure { Log.failure("回滚删除组 $name", it) }
+                }
+                throw ex
             }
         }
         return GroupRef(group.id, group.namePlain, existing == null)

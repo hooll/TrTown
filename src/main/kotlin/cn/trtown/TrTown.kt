@@ -6,6 +6,7 @@ import cn.trtown.dominion.DominionConfig
 import cn.trtown.dominion.FlagConfig
 import cn.trtown.model.TownRole
 import cn.trtown.papi.TrTownPlaceholders
+import cn.trtown.platform.LangMerge
 import cn.trtown.platform.Lifecycle
 import cn.trtown.platform.Notify
 import cn.trtown.platform.PlatformScheduler
@@ -20,6 +21,7 @@ import taboolib.common.platform.function.info
 import taboolib.common.platform.function.severe
 import taboolib.common.platform.function.warning
 import taboolib.platform.BukkitPlugin
+import java.io.File
 
 /** 插件版本，与 gradle.properties 中的 version 保持一致 */
 const val VERSION = "0.1.0"
@@ -38,6 +40,16 @@ object TrTown : Plugin() {
 
     override fun onEnable() {
         info("TrTown v$VERSION 已启用")
+
+        // M-28：插件不覆盖已存在的 lang 文件，升级新增的键必须主动合并进来，
+        // 否则玩家看到的是原始键名（能跑、不报错，最难查）
+        runCatching {
+            val plan = LangMerge.run(File(BukkitPlugin.getInstance().dataFolder, "lang/zh_CN.yml"))
+            if (plan.changed) {
+                info("语言文件已补齐 ${plan.appended.size} 条键：${plan.appended.joinToString("、")}")
+            }
+        }.onFailure { warning("[语言] 合并失败: ${it.javaClass.simpleName}: ${it.message}") }
+        cn.trtown.command.Messages.reloadIfLoaded()
 
         // M-3：权限配置校验，任何一条不合法都拒绝启用（避免"配了但没生效"的静默事故）
         try {

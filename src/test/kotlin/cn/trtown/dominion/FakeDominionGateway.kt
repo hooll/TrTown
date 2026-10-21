@@ -18,6 +18,7 @@ class FakeDominionGateway : DominionGateway {
     private val groups = mutableMapOf<Int, MutableMap<String, GroupRef>>()
     private val memberFlags = mutableMapOf<Pair<Int, UUID>, MutableMap<String, Boolean>>()
     private val failures = mutableMapOf<String, Int>()
+    private val failAt = mutableMapOf<String, Int>()
     private var nextGroupId = 100
 
     fun addDominion(ref: DominionRef) {
@@ -27,6 +28,11 @@ class FakeDominionGateway : DominionGateway {
     /** 让某个方法前 [times] 次调用抛异常 */
     fun failTimes(method: String, times: Int) {
         failures[method] = times
+    }
+
+    /** 让某个方法在第 [callIndex] 次（1 起算）调用时抛异常（M-27：模拟"建到一半失败"） */
+    fun failOnCall(method: String, callIndex: Int) {
+        failAt[method] = callIndex
     }
 
     fun callNames(): List<String> = calls.map { it.name }
@@ -42,6 +48,10 @@ class FakeDominionGateway : DominionGateway {
 
     private fun record(name: String, vararg args: Any?) {
         calls += Call(name, args.toList())
+        val callNo = calls.count { it.name == name }
+        if (failAt[name] == callNo) {
+            throw DominionOpException("fake failure: $name #$callNo")
+        }
         val left = failures[name] ?: 0
         if (left > 0) {
             failures[name] = left - 1
