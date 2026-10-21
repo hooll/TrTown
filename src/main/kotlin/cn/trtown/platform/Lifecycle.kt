@@ -99,7 +99,7 @@ object Lifecycle {
      *    不清的话玩家会彻底卡死（`/tt leave` 要转让、`/tt create` 说已在镇里、其余命令说镇已解散）。
      *    收尾路径已经会删成员行，但历史脏数据或中断的解散仍可能留下这种状态，
      *    而且 `sweepDisbanded` 只扫 `dominion_id` 非空的镇，扫不到它们 —— 只能靠玩家自己登录脱身。
-     * 2. 成员所属镇已绑定领地但没有账本记录 → 补一条 GRANT。
+     * 2. 成员所属镇已绑定领地但没有成员记录 → 补一条 `MEMBER_ADD`；flag 不一致 → `MEMBER_FLAGS`。
      */
     private fun selfHeal(uuid: java.util.UUID) {
         val repos = Repos.fromStorage()
