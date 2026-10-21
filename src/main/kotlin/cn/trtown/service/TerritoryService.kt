@@ -4,6 +4,7 @@ import cn.trtown.dominion.DominionConfig
 import cn.trtown.dominion.DominionGateway
 import cn.trtown.dominion.DominionRef
 import cn.trtown.model.SyncAction
+import cn.trtown.model.SyncState
 import cn.trtown.model.Town
 import cn.trtown.model.TownGroup
 import cn.trtown.model.TownRole
@@ -42,10 +43,20 @@ class TerritoryService(
         val holder = repos.towns.findByDominionId(ref.id)
         if (holder != null && holder.id != town.id) {
             if (holder.state == TownState.DISBANDED) {
-                if (repos.tasks.countUnfinishedByTown(holder.id) > 0) {
-                    throw TownException(TownError.DOMINION_IN_USE, "旧镇解散尚未完成，请稍后再试")
+                // M-32：收尾只等 PENDING；DEAD 不再阻塞（否则这块地永远绑不上，且不可自愈）。
+                // 收尾失败时才解释原因 —— 且不再笼统地说"请稍后再试"，玩家等不到的东西不要让他等。
+                if (!towns.finalizeDisband(holder.id)) {
+                    val pending = repos.tasks.countUnfinishedByTown(holder.id)
+                    val dead = repos.tasks.countByTownAndState(holder.id, SyncState.DEAD)
+                    throw TownException(
+                        TownError.DOMINION_IN_USE,
+                        if (pending > 0) {
+                            "旧镇解散尚未完成（还有 $pending 条同步任务在跑），请稍后再试"
+                        } else {
+                            "旧镇解散时 Dominion 同步失败（$dead 条），领地可能残留权限，请联系管理员"
+                        },
+                    )
                 }
-                towns.finalizeDisband(holder.id)
             } else {
                 throw TownException(TownError.DOMINION_IN_USE, holder.name)
             }

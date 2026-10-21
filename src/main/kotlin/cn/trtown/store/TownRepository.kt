@@ -47,6 +47,18 @@ class TownRepository(private val store: Store) {
     fun listActive(): List<Town> =
         table.select(ds) { where("state" eq TownState.ACTIVE.name) }.map { toTown() }
 
+    /**
+     * 已解散但还没收尾干净的镇（M-32 的自愈入口）。
+     *
+     * 收尾（清 `dominion_id`）原本只在"该镇最后一条同步任务跑完"时触发。
+     * 一旦那条任务变成 `DEAD`（放弃），就再没有事件会触发它 —— 于是这块领地永久被占。
+     * 启动与每轮同步循环扫一遍这个列表，就能把历史遗留的脏数据自己收拾掉。
+     */
+    fun listDisbandedUnfinished(): List<Town> =
+        table.select(ds) { where("state" eq TownState.DISBANDED.name) }
+            .map { toTown() }
+            .filter { it.dominionId != null }
+
     fun countActiveByOwner(ownerUuid: UUID): Int {
         var count = 0
         table.select(ds) {

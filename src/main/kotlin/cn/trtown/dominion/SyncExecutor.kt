@@ -31,9 +31,27 @@ class SyncExecutor(
 
     /** 取出到点任务并执行，返回本轮处理数量 */
     fun runOnce(limit: Int = 20): Int {
+        sweepDisbanded()
         val tasks = repos.tasks.claimReady(clock(), limit)
         tasks.forEach { execute(it) }
         return tasks.size
+    }
+
+    /**
+     * M-32 的自愈入口：把"已解散但 `dominion_id` 还没清"的镇收尾掉。
+     *
+     * 收尾原本只由"该镇最后一条同步任务跑完"触发。那条任务一旦变成 `DEAD`，
+     * 就再没有任何事件会触发它 —— 那块领地会被永久占住（真服症状：
+     * `该领地已被其他小镇绑定（旧镇解散尚未完成，请稍后再试）`，等到天荒地老也不会变）。
+     *
+     * 放在每轮轮询里而不是新开常驻任务（PLAN §5.13 上限 2 个）：一次小表 SELECT，
+     * 且 `finalizeDisband` 本身幂等，没有脏数据时是纯读。
+     */
+    private fun sweepDisbanded() {
+        repos.towns.listDisbandedUnfinished().forEach { town ->
+            runCatching { towns.finalizeDisband(town.id) }
+                .onFailure { cn.trtown.platform.Log.failure("解散收尾自愈（镇 #${town.id}）", it) }
+        }
     }
 
     fun execute(task: SyncTask) {

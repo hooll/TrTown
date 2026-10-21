@@ -261,18 +261,32 @@ class SyncTaskRepository(private val store: Store) {
         return count
     }
 
+    fun countByTownAndState(townId: Int, state: SyncState): Int {
+        var count = 0
+        table.select(ds) {
+            where { ("town_id" eq townId) and ("state" eq state.name) }
+        }.forEach { count++ }
+        return count
+    }
+
     /**
-     * 某镇还有多少**未完成**任务（PENDING 或 DEAD）。
+     * 某镇还有多少**真正会再跑**的任务（只算 PENDING）。
      *
-     * M-10：DEAD 也必须阻塞解散收尾——否则账本被删、Dominion 里的权限还在，
-     * 且 `admin verify` 再也查不出来。DEAD 由 `admin retry` 复活后继续收尾。
+     * **M-32（第 15 轮审计）**：`DEAD` 不算未完成。`DEAD` 的语义是"重试耗尽、放弃"，
+     * 它**永远不会自己变回 DONE**；把它算进来就等于让一个放弃了的同步永久阻塞业务收尾
+     * → `dominion_id` 永不清空 → 那块领地再也绑不到任何新镇，而且**不可自愈**。
+     *
+     * 代价（必须显式承担，不能静默）：收尾时 Dominion 侧可能残留权限。
+     * 所以 [cn.trtown.service.TownService.finalizeDisband] 会为 DEAD 打 warning + 写一条
+     * `disband-finalized-degraded` 审计，任务行本身也保留下来当证据。
+     *
+     * 历史：M-10 曾经反过来（DEAD 也阻塞），理由是"账本删了 admin verify 就查不出来"。
+     * 那条理由在"玩家永远绑不上这块地"面前不成立 —— 可见的残留优于不可见的锁死。
      */
     fun countUnfinishedByTown(townId: Int): Int {
         var count = 0
         table.select(ds) {
-            where {
-                ("town_id" eq townId) and (("state" eq SyncState.PENDING.name) or ("state" eq SyncState.DEAD.name))
-            }
+            where { ("town_id" eq townId) and ("state" eq SyncState.PENDING.name) }
         }.forEach { count++ }
         return count
     }

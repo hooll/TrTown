@@ -2,9 +2,11 @@ package cn.trtown.service
 
 import cn.trtown.model.Member
 import cn.trtown.model.SyncAction
+import cn.trtown.model.SyncState
 import cn.trtown.model.Town
 import cn.trtown.model.TownRole
 import cn.trtown.model.TownState
+import cn.trtown.platform.Log
 import java.util.UUID
 
 /**
@@ -127,14 +129,27 @@ class TownService(
     }
 
     /**
-     * 解散收尾（M-5）：等该镇所有同步任务 DONE 后，清 `dominion_id`、删 grants、删组行。
+     * 解散收尾（M-5）：等该镇所有**还会再跑**的同步任务（PENDING）结束后，清 `dominion_id`、删 grants、删组行。
      *
      * 幂等、可重启重跑：重复调用只会做剩下的部分。返回 true 表示已收尾。
+     *
+     * **M-32**：`DEAD` 任务不阻塞收尾（见 `countUnfinishedByTown`），但必须留痕 ——
+     * 否则 Dominion 侧可能残留权限，而 TrTown 这边已经什么都不记得了。
+     * 留痕方式：一行 warning + 一条 `disband-finalized-degraded` 审计；任务行本身保留当证据。
      */
     fun finalizeDisband(townId: Int): Boolean {
         val town = repos.towns.findById(townId) ?: return false
         if (town.state != TownState.DISBANDED) return false
         if (repos.tasks.countUnfinishedByTown(townId) > 0) return false
+
+        val dead = repos.tasks.countByTownAndState(townId, SyncState.DEAD)
+        if (dead > 0) {
+            Log.warn(
+                "解散收尾跳过 $dead 条失败的 Dominion 同步（镇 #$townId，领地 ${town.dominionId}）——" +
+                    "Dominion 侧权限可能残留，请用 /trtown admin verify 核对",
+            )
+            repos.audit.append(null, townId, "disband-finalized-degraded", "dead=$dead dominion=${town.dominionId}", clock())
+        }
 
         val hadDominion = town.dominionId != null
         val hadGroups = repos.groups.listByTown(townId).isNotEmpty()

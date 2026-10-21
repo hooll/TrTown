@@ -16,9 +16,16 @@ object Log {
 
     fun failure(op: String, ex: Throwable) {
         val line = "[TrTown] $op 失败: ${ex.javaClass.name}: ${ex.message}"
+        emit(line)
+        ex.printStackTrace()
+    }
+
+    /** 需要被看见、但没有异常可打的风险提示（M-32：收尾时跳过了失败的同步） */
+    fun warn(message: String) = emit("[TrTown] $message")
+
+    private fun emit(line: String) {
         // 日志本身绝不允许把调用方带崩：单测环境没有 TabooLib 平台层（`warning` 是 compileOnly），
         // 真服上则一定有。退化成 stderr 也要把这一行留下。
         runCatching { warning(line) }.onFailure { System.err.println(line) }
-        ex.printStackTrace()
     }
 }

@@ -16,6 +16,7 @@ import java.util.UUID
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /** AC-6 / AC-8 / AC-9 / AC-15：执行器与 Fake 网关 */
@@ -91,6 +92,24 @@ class SyncExecutorTest {
         fresh.runOnce()
 
         assertEquals(SyncState.DONE, repos.tasks.listByTown(townId).filter { it.targetUuid == guest }.single().state)
+    }
+
+    @Test
+    fun `M-32 轮询会自愈已解散但 dominion_id 未清的镇`() {
+        val owner = UUID.randomUUID()
+        val town = towns.create(owner, "青云镇")
+        repos.towns.updateDominion(town.id, 42)
+        towns.disband(owner)
+
+        // 模拟历史遗留：任务重试耗尽变 DEAD，收尾从此再没有触发点
+        repos.tasks.listByTown(town.id).forEach {
+            repos.tasks.markAttempt(it.id, "boom", 5, now, dead = true, now = now)
+        }
+        assertNotNull(repos.towns.findById(town.id)?.dominionId, "前置条件：解散后 dominion_id 还在")
+
+        executor.runOnce()
+
+        assertNull(repos.towns.findById(town.id)?.dominionId, "轮询必须自己把收尾补上，否则领地永久被占")
     }
 
     @Test

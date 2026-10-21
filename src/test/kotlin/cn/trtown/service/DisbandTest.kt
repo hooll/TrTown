@@ -146,8 +146,18 @@ class DisbandTest {
         assertEquals(TownError.CANNOT_TARGET_MAYOR, ex.error)
     }
 
+    /**
+     * M-32（第 15 轮审计）：`DEAD` 是终态，**不再阻塞**解散收尾。
+     *
+     * 这条用例原本叫「M-10 DEAD 任务阻塞解散收尾」并断言 `false` —— 那个语义已被证伪：
+     * `DEAD` 永远不会自己变回 DONE，让它阻塞就等于那块领地永远绑不到任何新镇、且不可自愈
+     * （真服表现：`该领地已被其他小镇绑定（旧镇解散尚未完成，请稍后再试）`，等一辈子也不会变）。
+     *
+     * 新语义：收尾照做，但必须**留痕**（warning + `disband-finalized-degraded` 审计），
+     * 任务行保留当证据，可见的残留优于不可见的锁死。
+     */
     @Test
-    fun `M-10 DEAD 任务阻塞解散收尾`() {
+    fun `M-32 DEAD 任务不再阻塞解散收尾但必须留痕`() {
         val owner = UUID.randomUUID()
         val town = towns.create(owner, "青云镇")
         repos.towns.updateDominion(town.id, 45)
@@ -156,11 +166,29 @@ class DisbandTest {
         val task = repos.tasks.listByTown(town.id).first()
         repos.tasks.markAttempt(task.id, "boom", 5, now, dead = true, now = now)
 
-        assertEquals(false, towns.finalizeDisband(town.id), "DEAD 任务未清时不得收尾")
-        assertEquals(45, repos.towns.findById(town.id)?.dominionId)
+        assertEquals(true, towns.finalizeDisband(town.id), "DEAD 是终态，不得永久阻塞收尾")
+        assertNull(repos.towns.findById(town.id)?.dominionId, "dominion_id 必须清空，否则领地永远绑不回来")
 
-        // admin retry 复活后完成，才允许收尾
-        repos.tasks.resetDead(now)
+        // 留痕：一条 degraded 审计，带上 DEAD 数量
+        val degraded = repos.audit.listByTown(town.id).filter { it.action == "disband-finalized-degraded" }
+        assertEquals(1, degraded.size, "跳过失败的同步必须留痕：${degraded.map { it.action }}")
+        assertTrue(degraded.single().detail!!.contains("dead=1"), "审计要带数量：${degraded.single().detail}")
+
+        // 任务行保留当证据（不能被静默删掉）
+        assertEquals(1, repos.tasks.listByTown(town.id).count { it.state == cn.trtown.model.SyncState.DEAD })
+    }
+
+    @Test
+    fun `M-32 PENDING 任务仍然阻塞解散收尾`() {
+        val owner = UUID.randomUUID()
+        val town = towns.create(owner, "青云镇")
+        repos.towns.updateDominion(town.id, 46)
+        towns.disband(owner)
+
+        // 还有任务在跑（PENDING）→ 必须等
+        assertEquals(false, towns.finalizeDisband(town.id), "PENDING 还没跑完，不能收尾")
+        assertEquals(46, repos.towns.findById(town.id)?.dominionId)
+
         repos.tasks.listByTown(town.id).forEach { repos.tasks.markDone(it.id, now) }
         assertEquals(true, towns.finalizeDisband(town.id))
         assertNull(repos.towns.findById(town.id)?.dominionId)
