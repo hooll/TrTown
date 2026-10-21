@@ -122,7 +122,7 @@ internal object CmdInvite {
             suggestUncheck { Suggestions.playerNames(cn.trtown.service.SuggestHooks.onlineNames(), sender.name) }
             execute<ProxyCommandSender> { sender, ctx, _ ->
                 Cmd.player(sender) { player ->
-                    val target = Cmds.player(ctx["player"]) ?: return@player Cmd.replyKey(sender, "common.player-offline")
+                    val target = Cmds.player(ctx["player"]) ?: return@player Cmd.replyKey(sender, "common.player-offline", ctx["player"])
                     Cmd.run(sender) {
                         Cmds.invites().invite(player.uniqueId, target)
                         Cmd.replyKey(sender, "town.invite.success", ctx["player"])
@@ -160,7 +160,7 @@ internal object CmdKick {
             suggestUncheck { Suggestions.playerNames(cn.trtown.service.SuggestHooks.onlineNames(), sender.name) }
             execute<ProxyCommandSender> { sender, ctx, _ ->
                 Cmd.player(sender) { player ->
-                    val target = Cmds.player(ctx["player"]) ?: return@player Cmd.replyKey(sender, "common.player-offline")
+                    val target = Cmds.player(ctx["player"]) ?: return@player Cmd.replyKey(sender, "common.player-offline", ctx["player"])
                     Cmd.run(sender) {
                         Cmds.membership().kick(player.uniqueId, target)
                         Cmd.replyKey(sender, "town.kick.success", ctx["player"])
@@ -210,7 +210,7 @@ internal object CmdSetRole {
                 suggestUncheck { Suggestions.roles() }
                 execute<ProxyCommandSender> { sender, ctx, _ ->
                     Cmd.player(sender) { player ->
-                        val target = Cmds.player(ctx["player"]) ?: return@player Cmd.replyKey(sender, "common.player-offline")
+                        val target = Cmds.player(ctx["player"]) ?: return@player Cmd.replyKey(sender, "common.player-offline", ctx["player"])
                         val role = runCatching { TownRole.valueOf(ctx["role"].uppercase()) }.getOrNull()
                             ?: return@player Cmd.replyKey(sender, "town.setrole.invalid", ctx["role"])
                         if (role == TownRole.MAYOR) return@player Cmd.replyKey(sender, "town.setrole.invalid", ctx["role"])

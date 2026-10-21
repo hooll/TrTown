@@ -143,8 +143,15 @@ class SyncExecutor(
         val ref = gateway.resolveById(task.dominionId) ?: return
         val uuid = requireTarget(task)
         val town = repos.towns.findById(task.townId)
-        // 离开后立刻重新入镇：旧移除任务不能把新身份删掉（解散时成员行本来就已清空，不适用）
-        if (town?.state == TownState.ACTIVE && repos.members.find(task.townId, uuid) != null) return
+        // 离开后立刻重新入镇：旧移除任务不能把新身份删掉（解散时成员行本来就已清空，不适用）。
+        // 必须同时看领地是否仍是任务指向的那块：解绑后 dominionId=null、换绑后 dominionId=新领地，
+        // 这两种情况下成员行还在，但旧领地必须照常移除（M-38）。
+        if (town?.state == TownState.ACTIVE &&
+            town.dominionId == task.dominionId &&
+            repos.members.find(task.townId, uuid) != null
+        ) {
+            return
+        }
         gateway.removeMemberFromDominion(ref, uuid)
     }
 

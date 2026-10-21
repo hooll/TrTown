@@ -17,6 +17,7 @@ import org.junit.jupiter.api.Test
 import java.util.UUID
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -185,6 +186,70 @@ class BindingAndMembershipTest {
 
         assertTrue(!fake.isMemberDirect(42, guest), "退镇后必须 removeMember")
         assertEquals(0, repos.tasks.listByTown(townId).count { it.action == SyncAction.MEMBER_REMOVE && it.state != cn.trtown.model.SyncState.DONE })
+    }
+
+    // ---- M-38：解绑 / 换绑必须真的删旧领地成员 ----
+
+    @Test
+    fun `M-38 解绑后旧领地的成员必须被移除`() {
+        val (townId, owner, guest) = townWithMember()
+        fake.addDominion(DominionRef(42, owner, "我的领地"))
+        fake.setAt(DominionRef(42, owner, "我的领地"))
+        territory.setterritory(owner, null, pos)
+        executor.runOnce()
+        assertTrue(fake.isMemberDirect(42, guest))
+
+        territory.unsetterritory(owner)
+        assertNull(repos.towns.findById(townId)?.dominionId)
+        executor.runOnce()
+
+        assertFalse(fake.isMemberDirect(42, guest), "解绑后旧领地成员必须被 removeMember")
+        assertTrue(
+            fake.calls.any { it.name == "removeMemberFromDominion" && it.args == listOf(42, guest) },
+            "必须对旧领地真的调用 removeMember：${fake.calls}",
+        )
+        assertTrue(
+            repos.tasks.listByTown(townId)
+                .filter { it.action == SyncAction.MEMBER_REMOVE }
+                .all { it.state == cn.trtown.model.SyncState.DONE },
+            "移除任务必须跑完，而不是被保护条件直接收尾",
+        )
+    }
+
+    @Test
+    fun `M-38 换绑后旧领地清空、新领地有成员`() {
+        val (townId, owner, guest) = townWithMember()
+        fake.addDominion(DominionRef(42, owner, "旧领地"))
+        fake.setAt(DominionRef(42, owner, "旧领地"))
+        territory.setterritory(owner, null, pos)
+        executor.runOnce()
+        assertTrue(fake.isMemberDirect(42, guest))
+
+        fake.addDominion(DominionRef(43, owner, "新领地"))
+        fake.setAt(DominionRef(43, owner, "新领地"))
+        territory.setterritory(owner, null, pos)
+        executor.runOnce()
+
+        assertEquals(43, repos.towns.findById(townId)?.dominionId)
+        assertFalse(fake.isMemberDirect(42, guest), "换绑后旧领地不能再留成员")
+        assertTrue(fake.isMemberDirect(43, guest), "换绑后新领地必须有成员")
+    }
+
+    @Test
+    fun `M-38 同领地退镇后立刻重入不会被旧移除任务误删`() {
+        val (townId, owner, guest) = townWithMember()
+        fake.addDominion(DominionRef(42, owner, "我的领地"))
+        fake.setAt(DominionRef(42, owner, "我的领地"))
+        territory.setterritory(owner, null, pos)
+        executor.runOnce()
+        assertTrue(fake.isMemberDirect(42, guest))
+
+        membership.leave(guest)
+        invites.invite(owner, guest)
+        invites.accept(guest, townId)
+        executor.runOnce()
+
+        assertTrue(fake.isMemberDirect(42, guest), "同一领地内重新入镇，旧 MEMBER_REMOVE 不能把新身份删掉")
     }
 
     // ---- helpers ----
