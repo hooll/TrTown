@@ -107,6 +107,11 @@ internal object Cmds {
         }
     }
 
+    /** `perm` 缺参的统一用法提示（M-22：perm / player / flag 三层共用，禁止文案漂移） */
+    fun usagePerm(sender: ProxyCommandSender) {
+        Cmd.reply(sender, "§c用法：/trtown perm <玩家> <flag> <on|off|reset>")
+    }
+
     // ---- 帮助（`/trtown`、`/tt`、`/trtown help` 共用同一实现，禁止文案漂移） ----
 
     fun sendHelp(sender: ProxyCommandSender) {

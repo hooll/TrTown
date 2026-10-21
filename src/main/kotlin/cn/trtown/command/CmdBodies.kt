@@ -244,11 +244,18 @@ internal object CmdSetRole {
 
 internal object CmdPerm {
     val command = subCommand {
+        // M-22：三层缺参都要落到用法提示，而不是框架的"未知或不完整的命令"。
+        // 这是**故意的隐式可选**：先挂 executor 再加子节点，子节点自动 optional（CommandComponent.kt:27-31/46-50）。
+        execute<ProxyCommandSender> { sender, _, _ -> Cmds.usagePerm(sender) }
         dynamic("player") {
             suggestUncheck { Suggestions.playerNames(cn.trtown.service.SuggestHooks.onlineNames(), sender.name) }
+            execute<ProxyCommandSender> { sender, _, _ -> Cmds.usagePerm(sender) }
             dynamic("flag") {
                 suggestUncheck { SuggestCache.flags() }
+                execute<ProxyCommandSender> { sender, _, _ -> Cmds.usagePerm(sender) }
                 dynamic("value") {
+                    // value 自己不挂 execute：它由 flag 的 execute 变成 optional，
+                    // 缺 value 时落到 flag 的 execute（用法提示）。见 CommandTreeTest 的断言。
                     suggestUncheck { Suggestions.values() }
                     execute<ProxyCommandSender> { sender, ctx, _ ->
                         Cmd.player(sender) { player ->
