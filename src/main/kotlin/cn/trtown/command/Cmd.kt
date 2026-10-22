@@ -43,6 +43,8 @@ object Cmd {
 
     /** 把业务逻辑丢到异步线程；主线程标记在命令线程上（M-8） */
     fun run(sender: ProxyCommandSender, block: () -> Unit) {
+        // PLAN §5.18.5：执行任意 `/tt` 子命令都要放弃待输入状态，避免"刚点完按钮又发一条聊天"被吞
+        cn.trtown.gui.ChatInput.cancel(uuidOf(sender))
         ThreadGuard.enterMain()
         try {
             PlatformScheduler.runAsync(delayTicks = 1) {

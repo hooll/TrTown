@@ -22,10 +22,14 @@ import taboolib.common.platform.command.mainCommand
 )
 object MainCommand {
 
-    /** 根命令：`/trtown` 与 `/tt` 无参时打印帮助（M-16） */
+    /**
+     * 根命令：`/trtown` 与 `/tt` 无参（PLAN §5.18.1 / AC-56 / AC-60）。
+     *
+     * 默认打开主菜单；`gui.enabled: false` 或发送者不是玩家时回退文字帮助。
+     */
     @CommandBody
     val main = mainCommand {
-        execute<ProxyCommandSender> { sender, _, _ -> Cmds.sendHelp(sender) }
+        execute<ProxyCommandSender> { sender, _, _ -> Cmds.openMainMenu(sender) }
     }
 
     @CommandBody
@@ -71,6 +75,12 @@ object MainCommand {
     val unsetterritory = CmdUnsetTerritory.command
 
     @CommandBody
+    val settp = CmdSetTp.command
+
+    @CommandBody
+    val tp = CmdTp.command
+
+    @CommandBody
     val info = CmdInfo.command
 
     @CommandBody
@@ -78,9 +88,6 @@ object MainCommand {
 
     @CommandBody
     val list = CmdList.command
-
-    @CommandBody
-    val perms = CmdFlags.command
 
     @CommandBody
     val disband = CmdDisband.command

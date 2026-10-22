@@ -29,6 +29,15 @@ enum class TownError(val message: String) {
     DOMINION_NOT_OWNER("你不是该领地的所有者"),
     DOMINION_IN_USE("该领地已被其他小镇绑定"),
     DOMINION_BIND_FAILED("绑定失败，已回滚"),
+    /** 自己镇还没设传送点（PLAN §5.17.3） */
+    TP_NOT_SET("小镇还没有设置传送点"),
+
+    /** 目标镇还没设传送点（跨镇，PLAN §5.17.3 / AC-61） */
+    TP_TARGET_NOT_SET("目标小镇还没有设置传送点"),
+
+    /** 管理开关关闭了跨镇传送（PLAN §5.17.3） */
+    TP_OTHERS_DISABLED("本服已关闭跨镇传送"),
+
     PREFIX_TOO_LONG("前缀太长"),
     PREFIX_DENY_CHAR("前缀包含不允许的字符"),
     PREFIX_INVALID("前缀不合法"),

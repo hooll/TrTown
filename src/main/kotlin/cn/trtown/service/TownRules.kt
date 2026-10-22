@@ -15,6 +15,8 @@ data class TownRules(
     val inviteExpireSeconds: Long,
     val maxPendingInvites: Int,
     val transferDemoteTo: TownRole,
+    /** 是否允许 `/tt tp <别人的镇>`（PLAN §5.17.3）；默认开，保持旧行为 */
+    val teleportAllowOthers: Boolean = true,
 ) {
     companion object {
         fun fromSettings(): TownRules = TownRules(
@@ -24,6 +26,7 @@ data class TownRules(
             inviteExpireSeconds = Settings.inviteExpireSeconds,
             maxPendingInvites = Settings.maxPendingInvites,
             transferDemoteTo = Settings.transferDemoteTo,
+            teleportAllowOthers = Settings.teleportAllowOthers,
         )
     }
 }

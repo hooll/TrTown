@@ -77,6 +77,8 @@ object TrTown : Plugin() {
         // 命令层：由 TabooLib 的 `@CommandHeader` / `@CommandBody` 注解在 ENABLE 阶段自动注册，
         // 这里不再手动 register()（PLAN §5.6.2 硬约束 4）。
         Lifecycle.registerListener()
+        // PLAN §5.18.5：GUI 的聊天输入监听器（只拦有待输入的玩家，绝不吞普通聊天）
+        org.bukkit.Bukkit.getPluginManager().registerEvents(cn.trtown.gui.ChatInput, BukkitPlugin.getInstance())
         // v1.25：拦截 Dominion 原生转让（主领地必须用 /tt transfer 连同小镇一起转）
         cn.trtown.platform.DominionTransferListener.register()
         // M-15：服务层变更（建镇/入镇/退镇/改角色/改前缀/解散）要能立刻刷新 PAPI 缓存

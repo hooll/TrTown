@@ -247,12 +247,28 @@ internal object CmdInfo {
     }
 }
 
-internal object CmdFlags {
+// ---------------- 小镇传送点（PLAN §5.17 / W10-2） ----------------
+
+internal object CmdSetTp {
     val command = subCommand {
-        execute<ProxyCommandSender> { sender, _, _ -> Cmds.doPerms(sender, null) }
-        dynamic("player") {
-            suggestUncheck { Suggestions.playerNames(cn.trtown.service.SuggestHooks.onlineNames(), sender.name) }
-            execute<ProxyCommandSender> { sender, ctx, _ -> Cmds.doPerms(sender, ctx["player"]) }
+        execute<ProxyCommandSender> { sender, _, _ ->
+            Cmds.doSettp(sender, sender.hasPermission("trtown.admin"))
+        }
+    }
+}
+
+/**
+ * `/tt tp [镇名]`（PLAN §5.17.3）。
+ *
+ * 带镇名时可传别人的镇（m02168），但受 `teleport.allow-others` 总开关限制；
+ * 补全复用 `SuggestCache` 的镇名缓存，不额外查库。
+ */
+internal object CmdTp {
+    val command = subCommand {
+        execute<ProxyCommandSender> { sender, _, _ -> Cmds.doTp(sender, null) }
+        dynamic("town") {
+            suggestUncheck { Suggestions.towns(SuggestCache.towns()) }
+            execute<ProxyCommandSender> { sender, ctx, _ -> Cmds.doTp(sender, ctx["town"]) }
         }
     }
 }

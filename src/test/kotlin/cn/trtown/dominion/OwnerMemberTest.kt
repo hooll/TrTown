@@ -43,7 +43,7 @@ class OwnerMemberTest {
         repos = TestSupport.repos(store)
         towns = TownService(repos, TestSupport.rules) { now }
         fake = FakeDominionGateway()
-        territory = TerritoryService(repos, fake, towns) { now }
+        territory = TerritoryService(repos, fake, towns, clock = { now })
         executor = SyncExecutor(repos, fake, SyncSettings(5, listOf(5L, 30L)), towns) { now }
     }
 

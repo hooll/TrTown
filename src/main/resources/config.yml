@@ -44,6 +44,13 @@ dominion:
     MAYOR:
       presets: []              # 继承 MEMBER + MANAGER；当前无额外项
 
+teleport:
+  allow-others: true                # false → /tt tp <镇名> 一律拒绝（只允许传送回自己镇）
+
+gui:
+  enabled: true                     # false → /tt 回退文字帮助，所有菜单入口关闭
+  refresh-seconds: 3                # 占位：菜单按"点击时重开"刷新
+
 sync:
   poll-ticks: 20
   max-attempts: 5

@@ -3,7 +3,9 @@ package cn.trtown.command
 import cn.trtown.Settings
 import cn.trtown.dominion.DominionApiGateway
 import cn.trtown.model.Invite
+import cn.trtown.platform.Log
 import cn.trtown.platform.Players
+import cn.trtown.platform.Teleports
 import cn.trtown.service.InviteChoice
 import cn.trtown.service.InviteService
 import cn.trtown.service.MembershipService
@@ -38,7 +40,7 @@ internal object Cmds {
     fun membership(): MembershipService = MembershipService(repos())
 
     fun territory(): TerritoryService =
-        TerritoryService(repos(), DominionApiGateway(), towns())
+        TerritoryService(repos(), DominionApiGateway(), towns(), allowOthers = { Settings.teleportAllowOthers })
 
     fun prefix(): PrefixService = PrefixService(repos())
 
@@ -90,22 +92,93 @@ internal object Cmds {
         }
     }
 
-    /** `/tt perms`：展示当前角色在 Dominion 里的 flag 实况（v1.25 保留只读展示） */
-    fun doPerms(sender: ProxyCommandSender, playerName: String?) {
+    /** `/tt perms` 已删除（PLAN §5.19）；flag 实况改由 `/tt admin verify` 展示 */
+
+    /**
+     * `/tt settp`（PLAN §5.17.2）：把小镇传送点设为当前位置。
+     *
+     * `trtown.admin` 在命令层判定（[actorIsAdmin]），服务层不碰权限系统。
+     * 坐标必须在玩家 region 线程取，`Cmd.run` 之后已经是异步线程。
+     */
+    fun doSettp(sender: ProxyCommandSender, actorIsAdmin: Boolean) {
         Cmd.player(sender) { player ->
-            val target = playerName?.let { player(it) } ?: player.uniqueId
+            val at = Players.positionOf(player)
             Cmd.run(sender) {
-                val rows = territory().describeFlags(target)
-                Cmd.replyKey(sender, "town.perms.flags-header")
-                rows.forEach { row ->
-                    Cmd.reply(
-                        sender,
-                        "§7- §f${row.flag} §8角色应有=${row.expected} §7Dominion 实际=${row.actual ?: "未绑定"}",
+                try {
+                    val pos = territory().settp(player.uniqueId, at, actorIsAdmin)
+                    Cmd.replyKey(
+                        sender, "town.tp.set",
+                        coord(pos.x), coord(pos.y), coord(pos.z),
                     )
+                } catch (ex: TownException) {
+                    replyTpError(sender, ex)
+                } catch (ex: Throwable) {
+                    // PLAN §5.17.2：写失败必须是 town.tp.set-failed，且原作者堆栈进日志
+                    Log.failure("settp", ex)
+                    Cmd.replyKey(sender, "town.tp.set-failed")
                 }
             }
         }
     }
+
+    /**
+     * `/tt tp [镇名]`（PLAN §5.17.3 / AC-58 / AC-61）。
+     *
+     * 只在这里取目标（异步），真正的传送交给 [Teleports]（它会切到玩家 region 线程），
+     * 回调也在 region 线程上，直接回包即可。
+     */
+    fun doTp(sender: ProxyCommandSender, townName: String?) {
+        Cmd.player(sender) { player ->
+            Cmd.run(sender) {
+                val target = try {
+                    territory().tpTarget(player.uniqueId, townName)
+                } catch (ex: TownException) {
+                    replyTpError(sender, ex)
+                    return@run
+                }
+                Teleports.teleportTo(player, target.dominionId) { ok ->
+                    if (ok) {
+                        Cmd.replyKey(sender, "town.tp.done", target.townName)
+                    } else {
+                        Cmd.replyKey(sender, "town.tp.failed")
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * `/tt tp` / `/tt settp` 的错误文案映射。
+     *
+     * 不能靠 `Cmd.run` 的默认 `§c${ex.message}`：AC-59 / AC-61 要求的是 `town.tp.*` 那几句，
+     * 而枚举 message 是给日志看的短句。
+     */
+    fun replyTpError(sender: ProxyCommandSender, ex: TownException) {
+        val detail = ex.detail.orEmpty()
+        val key = when (ex.error) {
+            TownError.NOT_IN_TOWN -> "town.tp.no-town"
+            TownError.TOWN_NOT_BOUND -> "town.tp.no-dominion"
+            TownError.TP_NOT_SET -> "town.tp.not-set"
+            TownError.NOT_MAYOR -> "town.tp.not-mayor"
+            TownError.TOWN_NOT_FOUND, TownError.TOWN_DISBANDED -> "town.tp.not-found"
+            TownError.TP_TARGET_NOT_SET -> "town.tp.target-not-set"
+            TownError.TP_OTHERS_DISABLED -> "town.tp.others-disabled"
+            else -> null
+        }
+        if (key == null) Cmd.reply(sender, "§c${ex.message}") else Cmd.replyKey(sender, key, detail)
+    }
+
+    /** `/tt` 无参（PLAN §5.18.1）：GUI 关闭或非玩家 → 文字帮助 */
+    fun openMainMenu(sender: ProxyCommandSender) {
+        if (!Settings.guiEnabled) {
+            sendHelp(sender)
+            return
+        }
+        Cmd.player(sender) { player -> cn.trtown.gui.MainMenu.open(player) }
+    }
+
+    /** 坐标展示：一位小数，固定 Locale（中文系统的小数点是 "." 但别赌） */
+    private fun coord(value: Double): String = String.format(java.util.Locale.ROOT, "%.1f", value)
 
     /**
      * `/tt transfer <玩家> [confirm]`（PLAN §5.16.7）。
@@ -201,6 +274,7 @@ internal object Cmds {
 
     private val HELP_LINES = listOf(
         "§b§lTrTown §7帮助",
+        "§7/trtown §8- 打开小镇菜单（GUI）",
         "§7/trtown create <镇名> §8- 建镇",
         "§7/trtown invite|kick|setrole <玩家> §8- 成员管理",
         "§7/trtown transfer <玩家> [confirm] §8- 转让镇长（已绑领地时需二次确认，领地一起转）",
@@ -208,8 +282,9 @@ internal object Cmds {
         "§7/trtown leave §8- 退出小镇（镇长需先转让）",
         "§7/trtown setprefix <文本> §8- 改前缀（管理/镇长）",
         "§7/trtown setterritory [领地] | unsetterritory §8- 绑定/解绑主领地（无参＝脚下领地）",
+        "§7/trtown settp §8- 把小镇传送点设为当前位置（镇长）",
+        "§7/trtown tp [镇名] §8- 传送到小镇（不带镇名＝自己镇）",
         "§7/trtown info [镇名] | members | list §8- 查看",
-        "§7/trtown perms [玩家] §8- 查看角色在 Dominion 里的 flag 实况",
         "§7/trtown disband [confirm] §8- 解散（镇长）",
         "§7/trtown admin reload|retry|verify|force-disband §8- 运维",
         "§c管理拥有领地大小/改名/子领地操作权，且 Dominion 无撤销——管理只给信得过的人",

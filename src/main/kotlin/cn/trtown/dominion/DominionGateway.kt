@@ -16,13 +16,31 @@ data class BlockPosition(
     val x: Double,
     val y: Double,
     val z: Double,
+    /** 传送点朝向（PLAN §5.17.2：Dominion 存的是完整 Location，这里必须保住） */
+    val yaw: Float = 0f,
+    val pitch: Float = 0f,
 )
 
-/** Dominion 操作失败（future 异常完成 / 返回 null） */
-class DominionOpException(message: String, cause: Throwable? = null) : RuntimeException(message, cause)
+/** Dominion 操作失败（future 异常完成 / 返回 null） */class DominionOpException(message: String, cause: Throwable? = null) : RuntimeException(message, cause)
 
 /** 需要稍后重试（玩家不在 Dominion 缓存等） */
 class RetryLaterException(message: String, cause: Throwable? = null) : RuntimeException(message, cause)
+
+/**
+ * 领地范围（PLAN §5.18.4 领地菜单展示用）。
+ *
+ * 纯 Int/Long，**不带 Location / World**：`CuboidDTO` 本身不含世界引用，
+ * 展示只需要"多少格 + 对角坐标"，不需要把 Bukkit 类型漏出网关。
+ */
+data class DominionBounds(
+    val x1: Int,
+    val y1: Int,
+    val z1: Int,
+    val x2: Int,
+    val y2: Int,
+    val z2: Int,
+    val square: Long,
+)
 
 /**
  * Dominion 桥（PLAN §5.4 / §5.16）。
@@ -64,4 +82,26 @@ interface DominionGateway {
 
     /** 该玩家名下（owner）的领地名，用于 Tab 补全。只在异步线程调用。 */
     fun ownedNames(uuid: UUID): List<String>
+
+    /**
+     * 写领地传送点（PLAN §5.17.2）。
+     *
+     * `DominionDTO.setTpLocation(Location)` 是同步签名且抛 `SQLException`，实现必须整段进
+     * [cn.trtown.platform.GlobalBridge]。**不校验玩家是否站在领地内**（与 Dominion GUI 行为一致）。
+     */
+    fun setTpLocation(ref: DominionRef, pos: BlockPosition)
+
+    /**
+     * 读领地传送点（PLAN §5.17.1 / §5.17.3）。
+     *
+     * 数据源只有 Dominion，TrTown 不存副本；未设置 / 领地不存在 / 世界已卸载 → null。
+     */
+    fun tpLocation(ref: DominionRef): BlockPosition?
+
+    /**
+     * 读领地范围（PLAN §5.18.4 领地菜单：领地名 / 大小 / 坐标）。
+     *
+     * 纯内存读，不进桥；领地不存在返回 null。
+     */
+    fun bounds(ref: DominionRef): DominionBounds?
 }

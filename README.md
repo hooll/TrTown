@@ -14,8 +14,32 @@ Minecraft 小镇插件（Folia 26.3 / Java 25 / Dominion 4.9.5 / TabooLib 6.3）
   - 退镇 / 被踢 / 解散 = 从 Dominion 成员表移除。
 - 领地转让：`/tt transfer <玩家>` → `/tt transfer <玩家> confirm`，小镇与主领地一起转；
   **在 Dominion GUI 里转让主领地会被拦截**（必须走 `/tt transfer`）。
+- 小镇传送点（v1.26）：`/tt settp` 把当前脚下位置设为**主领地的**传送点，
+  `/tt tp [镇名]` 传送过去。传送点**只存在 Dominion 里**（`tpLocation`），TrTown 不另存一份；
+  不填镇名 = 回自己镇，填镇名可去任何 **ACTIVE** 镇（受 `teleport.allow-others` 控制）。
+  传送到别人的镇**不会**把你加成那个镇的成员，权限仍是 guest。
+- 菜单（v1.26）：`/tt` 无参直接开 GUI，`/tt help` 仍是文字帮助
 - 聊天前缀：`%trtown_prefix%` 等 5 个 PlaceholderAPI 变量，由 TrChat 引用
 - 运维：`/trtown admin reload|retry|verify|force-disband`
+
+## 菜单（GUI）怎么用
+
+`/tt` 无参打开主菜单（3×9）。所有菜单按钮**都是走命令**（等价于你自己敲 `/tt ...`），
+所以权限判定、提示文案、异步与线程模型与命令行完全一致——GUI 只是把命令变得可点。
+
+| 菜单 | 入口 | 能做什么 |
+| --- | --- | --- |
+| 主菜单 | `/tt` | 我的小镇 / 成员 / 邀请 / 领地与传送 / 设置 / 管理员（仅 `trtown.admin`） |
+| 我的小镇 | 主菜单 → 我的小镇 | 看镇名、前缀、成员数、领地 ID、传送点；传送到小镇 / 解绑领地 / 解散 |
+| 成员 | 主菜单 → 成员 | 点成员头颅：踢出 / 升为管理 / 降为成员（按你的阶级自动置灰） |
+| 邀请 | 主菜单 → 邀请 | 左键接受、右键拒绝 |
+| 领地与传送 | 主菜单 → 领地与传送 | 看领地范围与传送点；设传送点（`/tt settp`）、传送过去（`/tt tp`） |
+| 设置 | 主菜单 → 设置 | 改小镇前缀：点一下关菜单，再在聊天栏输入（30 秒内，输「取消」放弃） |
+| 管理员 | 主菜单 → 管理员 | reload / retry / verify / force-disband，后两个会让你在聊天栏输入参数 |
+
+- 解散、解绑领地都有**二次确认**菜单（绿色玻璃 = 确认，红色 = 取消）。
+- 关掉 GUI：`config.yml` 里 `gui.enabled: false`，`/tt` 会退回文字帮助，命令全部照旧。
+- 跨镇传送**不在 GUI 里**（避免误点），需要时敲 `/tt tp <镇名>`。
 
 ## 安装
 
@@ -47,7 +71,9 @@ Minecraft 小镇插件（Folia 26.3 / Java 25 / Dominion 4.9.5 / TabooLib 6.3）
 
 ## 聊天前缀（由服主手动接入）
 
-TrTown **不监听聊天**，只提供变量。把 `plugins/TrChat/channels/Normal.yml` 中
+TrTown **不参与聊天格式化**，只提供变量。唯一一处聊天监听是 GUI 的"聊天栏输入"
+（改前缀 / verify / force-disband）：命中时它只取消**那一条**消息并转发成对应命令，
+其余消息原样放行。把 `plugins/TrChat/channels/Normal.yml` 中
 `Formats[0].prefix.part-before-player.text` 从 `' '` 改为：
 
 ```yaml
@@ -90,6 +116,9 @@ TrTown **不监听聊天**，只提供变量。把 `plugins/TrChat/channels/Norm
 - `dominion.roles.<ROLE>.presets`：Dominion `flags.yml` 里的预设组名列表。
   **空列表合法**（该角色不设任何 flag）；preset 不存在 / 非空但展开为空 / flag 名未注册 → 启动失败
 - `prefix.*`：前缀长度/颜色/禁用字符/显示格式
+- `gui.enabled`：`false` 时 `/tt` 无参退回文字帮助（命令不受影响）
+- `gui.refresh-seconds`：占位项，当前实现是**点击时重开菜单**刷新，不轮询
+- `teleport.allow-others`：`false` 时 `/tt tp <镇名>` 一律拒绝（仍可 `/tt tp` 回自己镇）
 
 ## 构建
 

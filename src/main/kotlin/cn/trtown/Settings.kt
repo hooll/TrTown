@@ -122,6 +122,22 @@ object Settings {
         return section.getStringList("presets").map { it.trim() }.filter { it.isNotEmpty() }
     }
 
+    // ---- teleport（PLAN §5.17.3） ----
+
+    /** 是否允许 `/tt tp <别人的镇>`；false 时带镇名一律拒绝 */
+    val teleportAllowOthers: Boolean
+        get() = conf.getBoolean("teleport.allow-others", true)
+
+    // ---- gui（PLAN §5.18.7） ----
+
+    /** 总开关：false → `/tt` 回退文字帮助，菜单入口全部关闭 */
+    val guiEnabled: Boolean
+        get() = conf.getBoolean("gui.enabled", true)
+
+    /** 菜单刷新节流（占位；实现为"点击时重开"） */
+    val guiRefreshSeconds: Int
+        get() = conf.getInt("gui.refresh-seconds", 3)
+
     // ---- sync ----
 
     val syncPollTicks: Long

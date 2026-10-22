@@ -122,4 +122,30 @@ class FakeDominionGateway : DominionGateway {
     val ownedByName = mutableMapOf<UUID, MutableList<String>>()
 
     override fun ownedNames(uuid: UUID): List<String> = ownedByName[uuid] ?: emptyList()
+
+    /** 领地传送点（PLAN §5.17）：按领地 id 存，null = 未设置 */
+    private val tpLocations = mutableMapOf<Int, BlockPosition>()
+
+    override fun setTpLocation(ref: DominionRef, pos: BlockPosition) {
+        record("setTpLocation", ref.id, pos)
+        if (dominions[ref.id] == null) throw DominionOpException("fake: 领地不存在")
+        tpLocations[ref.id] = pos
+    }
+
+    override fun tpLocation(ref: DominionRef): BlockPosition? {
+        record("tpLocation", ref.id)
+        return tpLocations[ref.id]
+    }
+
+    /** 断言用：直接读 fake 存的传送点 */
+    fun tpLocationOf(dominionId: Int): BlockPosition? = tpLocations[dominionId]
+
+    /** 领地范围（PLAN §5.18.4）：测试预置用 */
+    private val boundsMap = mutableMapOf<Int, DominionBounds>()
+
+    fun setBounds(dominionId: Int, bounds: DominionBounds) {
+        boundsMap[dominionId] = bounds
+    }
+
+    override fun bounds(ref: DominionRef): DominionBounds? = boundsMap[ref.id]
 }

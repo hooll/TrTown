@@ -133,6 +133,53 @@ class DominionApiGateway(
                 emptyList()
             }
 
+    /**
+     * 写传送点（PLAN §5.17.2 / 写操作 5/6）。
+     *
+     * `DominionDTO.setTpLocation` 同步抛 `SQLException`，必须整段进桥（全局线程）。
+     * 世界已卸载时提前失败，避免把 null world 的 Location 塞给 Dominion。
+     */
+    override fun setTpLocation(ref: DominionRef, pos: BlockPosition) {
+        val dom = dom(ref) ?: throw DominionOpException("领地 ${ref.id} 不存在")
+        val world = Bukkit.getWorld(pos.worldUid) ?: throw DominionOpException("世界 ${pos.worldUid} 不存在")
+        val location = Location(world, pos.x, pos.y, pos.z, pos.yaw, pos.pitch)
+        try {
+            bridge.run("dominion.setTpLocation") { dom.setTpLocation(location) }
+        } catch (ex: java.sql.SQLException) {
+            throw DominionOpException("dominion.setTpLocation 失败: ${ex.message}", ex)
+        }
+    }
+
+    /**
+     * 读传送点（PLAN §5.17.1）。
+     *
+     * 只读 DTO 内存字段，不 fire 事件，因此不进桥；`Location.world` 可能为 null
+     * （世界被卸载），这种"设了但用不了"的状态按未设置处理。
+     */
+    override fun tpLocation(ref: DominionRef): BlockPosition? {
+        val dom = dom(ref) ?: return null
+        val location = runCatching { dom.tpLocation }.getOrElse {
+            Log.failure("DominionDTO.getTpLocation(${ref.id})", it)
+            return null
+        }
+        val world = location.world ?: return null
+        return BlockPosition(world.uid, location.x, location.y, location.z, location.yaw, location.pitch)
+    }
+
+    /** 领地范围（PLAN §5.18.4）：纯内存读，`CuboidDTO` 不抛异常，读不到返回 null */
+    override fun bounds(ref: DominionRef): DominionBounds? {
+        val dom = dom(ref) ?: return null
+        val cuboid = runCatching { dom.cuboid }.getOrElse {
+            Log.failure("DominionDTO.getCuboid(${ref.id})", it)
+            return null
+        }
+        return DominionBounds(
+            cuboid.x1(), cuboid.y1(), cuboid.z1(),
+            cuboid.x2(), cuboid.y2(), cuboid.z2(),
+            cuboid.square,
+        )
+    }
+
     // ---- 内部 ----
 
     private fun dom(ref: DominionRef): DominionDTO? = api.getDominion(ref.id)

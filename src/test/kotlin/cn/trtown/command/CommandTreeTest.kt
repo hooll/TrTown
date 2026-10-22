@@ -20,8 +20,8 @@ class CommandTreeTest {
 
     private val expected = setOf(
         "version", "help", "create", "invite", "accept", "deny", "leave", "kick", "transfer",
-        "setrole", "setprefix", "prefix", "setterritory", "unsetterritory", "info", "members",
-        "list", "perms", "disband", "admin",
+        "setrole", "setprefix", "prefix", "setterritory", "unsetterritory", "settp", "tp",
+        "info", "members", "list", "disband", "admin",
     )
 
     /** 字段名 → SimpleCommandBody，与 `MainCommand` 的 `@CommandBody` 一一对应 */
@@ -40,10 +40,11 @@ class CommandTreeTest {
         "prefix" to CmdPrefix.command,
         "setterritory" to CmdSetTerritory.command,
         "unsetterritory" to CmdUnsetTerritory.command,
+        "settp" to CmdSetTp.command,
+        "tp" to CmdTp.command,
         "info" to CmdInfo.command,
         "members" to CmdMembers.command,
         "list" to CmdList.command,
-        "perms" to CmdFlags.command,
         "disband" to CmdDisband.command,
         "admin" to CmdAdmin.command,
     )
@@ -58,8 +59,8 @@ class CommandTreeTest {
     }
 
     @Test
-    fun `AC-42 子命令集合精确为 20 个`() {
-        assertEquals(20, bodies.size)
+    fun `AC-42 子命令集合精确为 21 个`() {
+        assertEquals(21, bodies.size)
         assertEquals(expected, bodies.keys)
     }
 
@@ -72,12 +73,12 @@ class CommandTreeTest {
     }
 
     @Test
-    fun `AC-46 15 个节点必须挂补全且 uncheck=true`() {
+    fun `AC-46 12 个节点必须挂补全且 uncheck=true`() {
         val root = buildTree()
         val required = listOf(
-            "invite/player", "kick/player", "transfer/player", "perms/player",
+            "invite/player", "kick/player", "transfer/player",
             "setrole/player", "setrole/player/role",
-            "accept/town", "deny/town", "info/town", "setterritory/name",
+            "accept/town", "deny/town", "info/town", "setterritory/name", "tp/town",
             "admin/verify/town", "admin/force-disband/town",
         )
         required.forEach { path ->

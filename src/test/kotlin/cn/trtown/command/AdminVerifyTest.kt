@@ -39,7 +39,7 @@ class AdminVerifyTest {
         towns = TownService(repos, TestSupport.rules) { now }
         invites = InviteService(repos, TestSupport.rules) { now }
         fake = FakeDominionGateway()
-        territory = TerritoryService(repos, fake, towns) { now }
+        territory = TerritoryService(repos, fake, towns, clock = { now })
         executor = SyncExecutor(repos, fake, SyncSettings(5, listOf(5L)), towns) { now }
     }
 
