@@ -161,10 +161,14 @@ class TerritoryService(
             named
         }
 
+        // M-41（AUDIT §24.7）：非跨镇时"还没绑领地"必须报 TOWN_NOT_BOUND（→ town.tp.no-dominion）。
+        // 报 TP_NOT_SET 会让玩家被指引去 /tt settp，而那条路必然回"还没绑定领地"，等于空转。
         val dominionId = town.dominionId ?: throw TownException(
-            if (crossTown) TownError.TP_TARGET_NOT_SET else TownError.TP_NOT_SET,
+            if (crossTown) TownError.TP_TARGET_NOT_SET else TownError.TOWN_NOT_BOUND,
             town.name,
         )
+        // M-42（AUDIT §24.8）：Dominion 对未 settp 的领地会兜底返回领地中心，
+        // 所以下面两处 not-set 只在"绑了但读不到"（世界卸载等）时触发，属兜底路径而非主路径。
         val ref = gateway.resolveById(dominionId)
             ?: throw TownException(
                 if (crossTown) TownError.TP_TARGET_NOT_SET else TownError.TP_NOT_SET,

@@ -269,12 +269,15 @@ internal object Cmds {
     // ---- 帮助（`/trtown`、`/tt`、`/trtown help` 共用同一实现，禁止文案漂移） ----
 
     fun sendHelp(sender: ProxyCommandSender) {
+        Cmd.reply(sender, HELP_TITLE)
+        // M-43（AUDIT §24.8）：GUI 关掉时不能再宣称"打开小镇菜单"——否则玩家点了发现没反应
+        Cmd.reply(sender, Messages.get(if (Settings.guiEnabled) "gui.open" else "gui.disabled-help"))
         HELP_LINES.forEach { Cmd.reply(sender, it) }
     }
 
+    private const val HELP_TITLE = "§b§lTrTown §7帮助"
+
     private val HELP_LINES = listOf(
-        "§b§lTrTown §7帮助",
-        "§7/trtown §8- 打开小镇菜单（GUI）",
         "§7/trtown create <镇名> §8- 建镇",
         "§7/trtown invite|kick|setrole <玩家> §8- 成员管理",
         "§7/trtown transfer <玩家> [confirm] §8- 转让镇长（已绑领地时需二次确认，领地一起转）",

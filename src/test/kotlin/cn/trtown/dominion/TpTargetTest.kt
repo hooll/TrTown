@@ -112,10 +112,24 @@ class TpTargetTest {
     }
 
     @Test
+    fun `M-41 未绑定领地 tp（非跨镇）报 TOWN_NOT_BOUND 而不是 TP_NOT_SET`() {
+        val mayor = UUID.randomUUID()
+        towns.create(mayor, "青云镇")
+
+        val ex = assertFailsWith<TownException> { territory().tpTarget(mayor, null) }
+        assertEquals(
+            TownError.TOWN_NOT_BOUND, ex.error,
+            "没绑领地时应指引玩家去 setterritory，不能指引去 settp（AUDIT §24.7）",
+        )
+    }
+
+    @Test
     fun `AC-59 未设传送点 tp 报 TP_NOT_SET`() {
         val mayor = UUID.randomUUID()
         boundTown(mayor, "青云镇")
 
+        // 覆盖 M-42 的兜底分支：真实 Dominion 会把"未 settp"兜底成领地中心，
+        // 这里的 fake 不模拟兜底，所以断言的是"绑了但读不到"这条兜底路径。
         val ex = assertFailsWith<TownException> { territory().tpTarget(mayor, null) }
         assertEquals(TownError.TP_NOT_SET, ex.error)
     }

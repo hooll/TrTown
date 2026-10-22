@@ -62,6 +62,9 @@ admin.force-disband.done: "&a已强制解散 {0}"
 # ---- GUI（PLAN §5.18） ----
 gui.no-town: "未加入小镇"
 gui.disabled: "&c菜单功能已被服务器关闭，请使用文字命令"
+# 帮助首行按 gui.enabled 二选一（M-43 / AUDIT §24.8）
+gui.open: "&7/trtown &8- 打开小镇菜单（GUI）"
+gui.disabled-help: "&7/trtown &8- 查看帮助（GUI 已在配置中关闭）"
 gui.title.main: "&8TrTown &7| &b{0}"
 
 gui.button.close: "&7关闭"

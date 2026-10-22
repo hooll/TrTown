@@ -97,4 +97,34 @@ class FlagConfigTest {
         assertEquals(setOf("fly"), validated.effective.getValue(TownRole.MEMBER).keys)
         assertEquals(setOf("fly", "admin", "resize", "rename_dominion"), validated.effective.getValue(TownRole.MANAGER).keys)
     }
+
+    @Test
+    fun `M-44 presets 里直接写单个 flag 名也能展开（teleport 不是预设组）`() {
+        val validated = FlagConfig.validate(
+            rolePresets = presets(member = listOf("teleport"), manager = listOf("administration")),
+            presetFlags = presetFlags + ("movement" to listOf("move", "teleport", "fly")),
+            knownFlagNames = known + "teleport" + "move",
+        )
+
+        // MEMBER 只拿到 teleport 这一项，不该顺带拿到 movement 组里的 fly/move
+        assertEquals(setOf("teleport"), validated.effective.getValue(TownRole.MEMBER).keys)
+        assertEquals(
+            setOf("teleport", "admin", "resize", "rename_dominion"),
+            validated.effective.getValue(TownRole.MANAGER).keys,
+        )
+        // 启动日志用的是原始 presets，必须还是 `teleport`（AUDIT §24.10 闸门 ③）
+        assertEquals(listOf("teleport"), validated.presets.getValue(TownRole.MEMBER))
+    }
+
+    @Test
+    fun `M-44 既不是组名也不是 flag 名时仍然启动失败`() {
+        val ex = assertFailsWith<ConfigException> {
+            FlagConfig.validate(
+                rolePresets = presets(member = listOf("teleprot")),
+                presetFlags = presetFlags,
+                knownFlagNames = known,
+            )
+        }
+        assertTrue(ex.message!!.contains("teleprot"), ex.message!!)
+    }
 }

@@ -35,10 +35,10 @@ dominion:
   # v1.25（PLAN §5.16.1）：不再创建 Dominion 权限组。
   # 每个角色只配置 Dominion flags.yml 里的**预设组名**，启动时从
   # plugins/Dominion/flags.yml 的 groups.privilege.<名称>.flags 展开。
-  # 空列表合法 = 该角色不设任何 flag（MEMBER 默认就是"只加成员，与 Dominion GUI 一致"）。
+  # 空列表 = 该角色不设任何 flag。
   roles:
     MEMBER:
-      presets: []              # 只 addMember，一个 flag 都不设
+      presets: [teleport]     # M-44（AUDIT §24.10）：只给"回自己家"的门票，不含建筑/容器/管理
     MANAGER:
       presets: [administration]  # admin + resize + rename_dominion + 6 项子领地操作，共 7 项
     MAYOR:

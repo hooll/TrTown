@@ -18,6 +18,8 @@ Minecraft 小镇插件（Folia 26.3 / Java 25 / Dominion 4.9.5 / TabooLib 6.3）
   `/tt tp [镇名]` 传送过去。传送点**只存在 Dominion 里**（`tpLocation`），TrTown 不另存一份；
   不填镇名 = 回自己镇，填镇名可去任何 **ACTIVE** 镇（受 `teleport.allow-others` 控制）。
   传送到别人的镇**不会**把你加成那个镇的成员，权限仍是 guest。
+  还没 `/tt settp` 的小镇也能传——Dominion 会把"未设置"兜底成**领地中心**（M-42）。
+  普通成员默认带 `teleport` flag（`dominion.roles.MEMBER.presets: [teleport]`），否则 Dominion 会拒绝成员传送（M-44）。
 - 菜单（v1.26）：`/tt` 无参直接开 GUI，`/tt help` 仍是文字帮助
 - 聊天前缀：`%trtown_prefix%` 等 5 个 PlaceholderAPI 变量，由 TrChat 引用
 - 运维：`/trtown admin reload|retry|verify|force-disband`

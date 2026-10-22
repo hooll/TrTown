@@ -66,10 +66,18 @@ object FlagConfig {
             val presets = rolePresets[role].orEmpty()
             val flags = LinkedHashSet<String>()
             for (preset in presets) {
-                val list = presetFlags[preset] ?: throw ConfigException(
-                    "dominion.roles.${role.name}.presets 引用了不存在的预设组 `$preset`；" +
-                        "flags.yml 里可用：${presetFlags.keys.sorted().joinToString("、")}",
-                )
+                // M-44（AUDIT §24.10）：`presets` 除了预设组名，也接受**单个 flag 名**。
+                // Dominion 4.9.5 的 `groups.privilege` 里没有 `teleport` 组 —— `teleport`
+                // 只是 `movement` 组里的一项（movement = move/teleport/fly/riding/ender_pearl）。
+                // 给 MEMBER 整组 movement 会顺带放开 fly 等，超出"回自己家的门票"这一最小集合，
+                // 所以这里允许直接写 flag 名（先按组名查，组名不存在再按 flag 名查，组名优先）。
+                val list = presetFlags[preset]
+                    ?: if (preset.trim().lowercase() in knownFlagNames) listOf(preset)
+                    else throw ConfigException(
+                        "dominion.roles.${role.name}.presets 引用了不存在的预设组 `$preset`；" +
+                            "flags.yml 里可用：${presetFlags.keys.sorted().joinToString("、")}" +
+                            "（也可直接写单个 flag 名，如 teleport）",
+                    )
                 if (list.isEmpty()) {
                     throw ConfigException(
                         "预设组 `$preset` 展开出 0 个 flag（dominion.roles.${role.name}.presets 非空时不允许）",

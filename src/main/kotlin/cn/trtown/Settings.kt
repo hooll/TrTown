@@ -109,12 +109,18 @@ object Settings {
      * `groups.privilege.<名称>.flags`（4.9.5 实测结构），启动时由
      * [cn.trtown.dominion.FlagConfig] 展开。**空列表合法**（该角色不设任何 flag）。
      *
-     * 兼容旧配置：`presets` 键不存在时用默认值（MEMBER 空、MANAGER administration、MAYOR 空），
-     * 而不是把旧版逐 flag 表误读成"空预设"。
+     * **MEMBER 默认带 `teleport`**（M-44 / AUDIT §24.10）：Dominion 的 `TeleportProvider`
+     * 会校验成员自己的 `teleport` flag，不给就传不进去 —— 普通成员点不动 `/tt tp`
+     * 等于该功能对绝大多数玩家不可用。`teleport` 只是"回自己家的门票"，
+     * 不含建筑/容器/管理权限，与 m01715「只加成员、别给额外权限」不冲突。
+     *
+     * 兼容旧配置：`presets` 键不存在时用默认值（MEMBER `teleport`、MANAGER `administration`、
+     * MAYOR 空），而不是把旧版逐 flag 表误读成"空预设"。
      */
     fun rolePresets(role: TownRole): List<String> {
         val defaults = when (role) {
             TownRole.MANAGER -> listOf("administration")
+            TownRole.MEMBER -> listOf("teleport")
             else -> emptyList()
         }
         val section = conf.getConfigurationSection("dominion.roles.${role.name}") ?: return defaults
