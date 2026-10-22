@@ -32,7 +32,7 @@ Minecraft 小镇插件（Folia 26.3 / Java 25 / Dominion 4.9.5 / TabooLib 6.3）
 | 菜单 | 入口 | 能做什么 |
 | --- | --- | --- |
 | 主菜单 | `/tt` | 我的小镇 / 成员 / 邀请 / 领地与传送 / 设置 / 管理员（仅 `trtown.admin`） |
-| 我的小镇 | 主菜单 → 我的小镇 | 看镇名、前缀、成员数、领地 ID、传送点；传送到小镇 / 解绑领地 / 解散 |
+| 我的小镇 | 主菜单 → 我的小镇 | 看镇名、前缀、成员数、领地名、传送点；传送到小镇 / 解绑领地 / 解散 |
 | 成员 | 主菜单 → 成员 | 点成员头颅：踢出 / 升为管理 / 降为成员（按你的阶级自动置灰） |
 | 邀请 | 主菜单 → 邀请 | 左键接受、右键拒绝 |
 | 领地与传送 | 主菜单 → 领地与传送 | 看领地范围与传送点；设传送点（`/tt settp`）、传送过去（`/tt tp`） |
@@ -52,12 +52,21 @@ Minecraft 小镇插件（Folia 26.3 / Java 25 / Dominion 4.9.5 / TabooLib 6.3）
 3. 把 `TrTown-*.jar` 放进 `plugins/`，重启服务器。
 4. 首次启动会生成 `plugins/TrTown/config.yml`、`lang/zh_CN.yml`、`trtown.db`。
 5. 控制台应出现：
-   - `权限配置校验通过：MEMBER 0 项（不设 flag，仅加成员）/ MANAGER 7 项（administration）/ ...`
+   - `权限配置校验通过：MEMBER 1 项（teleport）/ MANAGER 8 项（administration）/ MAYOR 8 项（presets 为空，继承上级）`
    - `存储就绪：SQLITE，共 7 张表`
    - `PlaceholderAPI 扩展已注册`
    - 一条警告：`管理拥有领地大小 / 改名 / 子领地操作权，且 Dominion 无撤销`
 
 > 首次启动 TabooLib 会从 `repo.tabooproject.org` 下载运行期模块；离线环境需要预置缓存，否则插件无法加载。
+
+### 升级时语言文件不会自动更新「已有」文案
+
+`LangMerge` 只在启动时**补齐缺失的键**（日志里有 `语言文件已补齐 N 条键`），**不覆盖已存在的键**。所以升级时：
+
+- 新版本**新增**的提示会自动出现；
+- 新版本**修改**过的文案**不会生效** —— 需要手工改 `plugins/TrTown/lang/zh_CN.yml`，或删掉该文件让插件按 jar 内默认重建（会丢失你自己改过的文案）。
+
+例：v1.27 把 `gui.territory.info-lore` 的「领地 ID：」改成「领地：」，**只换 jar 不会变**，要手工改这一行。
 
 ### 从 v1.24 及更早版本升级
 
