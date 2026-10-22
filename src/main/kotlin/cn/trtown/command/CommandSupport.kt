@@ -86,7 +86,10 @@ internal object Cmds {
                 } ?: towns().townOf(player.uniqueId) ?: throw TownException(TownError.NOT_IN_TOWN)
                 Cmd.replyKey(
                     sender, "town.info.line", town.name, repos().members.countByTown(town.id),
-                    Settings.maxMembers, town.dominionId?.toString() ?: "-", prefix().render(town),
+                    Settings.maxMembers,
+                    // M-47：玩家可见处显示领地名（Dominion 现场读），读不到才回退 "-"
+                    town.dominionId?.let { id -> runCatching { territory().dominionName(id) }.getOrNull() } ?: "-",
+                    prefix().render(town),
                 )
             }
         }

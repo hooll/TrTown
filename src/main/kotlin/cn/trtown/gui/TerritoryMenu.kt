@@ -70,7 +70,8 @@ internal object TerritoryMenu {
                     'O',
                     GuiBase.item(
                         XMaterial.GRASS_BLOCK, "gui.territory.info", "gui.territory.info-lore",
-                        view.dominionId, view.tp,
+                        // M-47：玩家可见处显示领地名，读不到才回退内部编号
+                        view.dominionName.ifBlank { "#${view.dominionId}" }, view.tp,
                     ),
                 ) {
                     GuiBase.notice(

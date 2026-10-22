@@ -124,7 +124,7 @@ gui.invites.empty: "&7没有待处理邀请"
 
 gui.territory.title: "&8领地与传送"
 gui.territory.info: "&b{0}"
-gui.territory.info-lore: "&7领地 ID：&b{0}\n&7传送点：{1}"
+gui.territory.info-lore: "&7领地：&b{0}\n&7传送点：{1}"
 gui.territory.settp: "&e设传送点"
 gui.territory.settp-lore: "&7把传送点设为当前位置\n&c仅镇长可设置"
 gui.territory.tp: "&a传送过去"
