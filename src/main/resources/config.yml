@@ -24,11 +24,11 @@ town:
 
 prefix:
   enabled: true
-  max-length: 16                    # 去掉颜色码后的可见字符数
-  allow-color: true                 # 允许 & 颜色码
+  max-length: 16                    # 可见字符数上限，1-64；越界钳制，非法值回退 16（每次 reload 重新告警）
+  allow-color: true                 # 允许颜色/格式；false 时所有写入口统一去色
   display-format: "&8[&b%s&8] &r"   # %s = 前缀原文，最终由 PAPI 变量 %trtown_prefix% 输出
   fallback-to-name: true            # 未设置前缀时用镇名
-  cooldown-seconds: 0               # 0 = 随时可改
+  cooldown-seconds: 0               # 预留项：当前版本未执行冷却，始终可改
   deny-chars: ["%", "{", "}", "[", "]", "§"]   # 命中即拒绝（防 PAPI 递归 / 伪造系统标签）
 
 dominion:

@@ -41,6 +41,11 @@ enum class TownError(val message: String) {
     PREFIX_TOO_LONG("前缀太长"),
     PREFIX_DENY_CHAR("前缀包含不允许的字符"),
     PREFIX_INVALID("前缀不合法"),
+    PREFIX_EMPTY("前缀不能为空（恢复默认请用恢复按钮或 /tt setprefix reset）"),
+    PREFIX_INVALID_COLOR("颜色格式不完整或 HEX 非法"),
+    PREFIX_RAW_TOO_LONG("前缀输入超过 4096 个字符"),
+    PREFIX_CONFLICT("前缀已被其他管理修改，请重新打开编辑器"),
+    PREFIX_SAVING("前缀正在保存，请稍候"),
     PREFIX_DISABLED("前缀功能已关闭"),
 }
 

@@ -9,6 +9,7 @@ import taboolib.module.database.SQL
 import taboolib.module.database.SQLite
 import taboolib.module.database.Table
 import java.io.File
+import java.sql.Connection
 import javax.sql.DataSource
 
 /**
@@ -35,6 +36,98 @@ class Store(
             }
         }
         tables.all.forEach { table: Table<*, *> -> table.createTable(dataSource) }
+        // 旧 MySQL 库的 prefix 是 VARCHAR(64)，新前缀可能超过 64 字符；在发布 ready 前幂等扩容。
+        // 失败直接抛出，Storage.init 不会把 current 置上，调用方据此提示存储不可用。
+        if (dialect == SqlDialect.MYSQL) ensurePrefixTextColumn()
+    }
+
+    /**
+     * 旧 MySQL 的 `trtown_towns.prefix` 扩容为 `TEXT NULL`（幂等）。
+     *
+     * 只改列类型，不删表、不重建、不动索引与其它列，保留全部旧值（含 null）。
+     * 已经是 TEXT/CLOB 时直接返回，不每次无条件 ALTER。
+     */
+    fun ensurePrefixTextColumn() {
+        val (type, maxLength) = prefixColumnInfo() ?: return
+        val upper = type.uppercase()
+        if (upper.contains("TEXT") || upper.contains("CLOB") || upper.contains("LARGE OBJECT")) return
+        if (!upper.contains("CHAR")) return
+        // H2 的 TEXT 别名在 information_schema 里仍显示 CHARACTER VARYING，但长度是 1e9；
+        // 旧 VARCHAR(64) 的长度是 64。只对仍然受限的 CHAR 列执行扩容。
+        if (maxLength != null && maxLength > 65535) return
+        dataSource.connection.use { conn ->
+            val product = runCatching { conn.metaData.databaseProductName }.getOrDefault("")
+            val statements = if (product.contains("H2", ignoreCase = true)) {
+                listOf(
+                    "ALTER TABLE ${Schema.TOWNS} MODIFY COLUMN prefix TEXT NULL",
+                    "ALTER TABLE ${Schema.TOWNS} ALTER COLUMN prefix SET DATA TYPE TEXT",
+                )
+            } else {
+                listOf("ALTER TABLE ${Schema.TOWNS} MODIFY COLUMN prefix TEXT NULL")
+            }
+            var lastError: Throwable? = null
+            for (sql in statements) {
+                try {
+                    conn.createStatement().use { it.execute(sql) }
+                    return
+                } catch (ex: Throwable) {
+                    lastError = ex
+                }
+            }
+            throw IllegalStateException("prefix 列扩容为 TEXT 失败（原类型 $type）", lastError)
+        }
+    }
+
+    /** 读取 prefix 列类型与最大长度；表或列不存在时返回 null。 */
+    private fun prefixColumnInfo(): Pair<String, Long?>? {
+        dataSource.connection.use { conn ->
+            // information_schema 在 MySQL 与 H2 的 MySQL 模式都可用；大小写不敏感，避免驱动差异
+            runCatching {
+                conn.prepareStatement(
+                    "SELECT data_type, character_maximum_length FROM information_schema.columns " +
+                        "WHERE UPPER(table_name) = UPPER(?) AND UPPER(column_name) = 'PREFIX'",
+                ).use { statement ->
+                    statement.setString(1, Schema.TOWNS)
+                    statement.executeQuery().use { rs ->
+                        if (rs.next()) {
+                            val length = rs.getLong(2).takeUnless { rs.wasNull() }
+                            return rs.getString(1) to length
+                        }
+                    }
+                }
+            }
+            // 兜底：JDBC 元数据（不同驱动的目录/模式名差异较大，两种大小写都试）
+            val meta = conn.metaData
+            for (table in listOf(Schema.TOWNS, Schema.TOWNS.uppercase(), Schema.TOWNS.lowercase())) {
+                for (column in listOf("prefix", "PREFIX")) {
+                    meta.getColumns(null, null, table, column).use { rs ->
+                        if (rs.next()) {
+                            val length = rs.getLong("COLUMN_SIZE").takeUnless { rs.wasNull() }
+                            return rs.getString("TYPE_NAME") to length
+                        }
+                    }
+                }
+            }
+        }
+        return null
+    }
+
+    /** 单连接事务；异常回滚，成功提交。 */
+    fun <T> transaction(block: (Connection) -> T): T {
+        dataSource.connection.use { conn ->
+            val previousAutoCommit = conn.autoCommit
+            conn.autoCommit = false
+            try {
+                val result = block(conn)
+                conn.commit()
+                return result
+            } catch (ex: Throwable) {
+                runCatching { conn.rollback() }
+                throw ex
+            } finally {
+                runCatching { conn.autoCommit = previousAutoCommit }
+            }
+        }
     }
 
     /**

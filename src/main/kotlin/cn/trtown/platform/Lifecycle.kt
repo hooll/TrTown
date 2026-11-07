@@ -75,6 +75,8 @@ object Lifecycle {
             @EventHandler
             fun onQuit(event: PlayerQuitEvent) {
                 PlaceholderCache.invalidate(event.player.uniqueId)
+                // 退出即释放前缀草稿；之后的旧回调不得重新开窗
+                cn.trtown.gui.PrefixEditSessions.onQuit(event.player.uniqueId)
             }
         }, Bukkit.getPluginManager().getPlugin("TrTown") ?: return)
     }

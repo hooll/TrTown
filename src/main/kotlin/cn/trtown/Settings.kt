@@ -1,6 +1,7 @@
 package cn.trtown
 
 import cn.trtown.model.TownRole
+import taboolib.common.platform.function.warning
 import taboolib.module.configuration.Config
 import taboolib.module.configuration.Configuration
 
@@ -12,6 +13,14 @@ object Settings {
     @Config("config.yml")
     lateinit var conf: Configuration
 
+    /** 配置代次：reload 后递增，旧 GUI 会话据此失效。 */
+    @Volatile
+    var generation: Long = 0
+        private set
+
+    /** 同一错误配置只警告一次；reload 后重新记录。 */
+    private val warned = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
     /** 配置是否已完成注入 */
     val injected: Boolean
         get() = this::conf.isInitialized
@@ -19,6 +28,12 @@ object Settings {
     /** 配置热重载（`admin reload`） */
     fun reload() {
         if (injected) conf.reload()
+        warned.clear()
+        generation++
+    }
+
+    private fun warnOnce(key: String, message: String) {
+        if (warned.add(key)) warning("[配置] $message")
     }
 
     // ---- storage ----
@@ -83,7 +98,9 @@ object Settings {
         get() = conf.getBoolean("prefix.enabled", true)
 
     val prefixMaxLength: Int
-        get() = conf.getInt("prefix.max-length", 16)
+        get() = PrefixConfig.clampMaxLength(conf.get("prefix.max-length"), DEFAULT_PREFIX_MAX_LENGTH) { message ->
+            warnOnce("prefix.max-length", message)
+        }
 
     val prefixAllowColor: Boolean
         get() = conf.getBoolean("prefix.allow-color", true)
@@ -154,4 +171,43 @@ object Settings {
 
     val syncBackoffSeconds: List<Long>
         get() = conf.getLongList("sync.backoff-seconds").ifEmpty { listOf(5L, 30L, 120L, 600L) }
+
+    private const val DEFAULT_PREFIX_MAX_LENGTH = 16
+}
+
+/**
+ * 配置值归一化（纯函数，可单测）。
+ *
+ * - 缺失/null → 默认值，不告警；
+ * - 合法整数但越界 → 钳制到 [MIN_PREFIX_MAX_LENGTH]..[MAX_PREFIX_MAX_LENGTH] 并告警；
+ * - 类型错误/非整数 → 回退默认值并告警。
+ */
+object PrefixConfig {
+
+    const val MIN_PREFIX_MAX_LENGTH: Int = 1
+    const val MAX_PREFIX_MAX_LENGTH: Int = 64
+    const val DEFAULT_PREFIX_MAX_LENGTH: Int = 16
+
+    fun clampMaxLength(raw: Any?, default: Int, warn: (String) -> Unit): Int {
+        if (raw == null) return default
+        val value = when (raw) {
+            is Int -> raw
+            is Long -> if (raw >= Int.MIN_VALUE && raw <= Int.MAX_VALUE) raw.toInt() else null
+            is Short -> raw.toInt()
+            is Byte -> raw.toInt()
+            is Double -> if (raw % 1.0 == 0.0 && raw >= Int.MIN_VALUE && raw <= Int.MAX_VALUE) raw.toInt() else null
+            is Float -> if (raw % 1f == 0f && raw >= Int.MIN_VALUE && raw <= Int.MAX_VALUE) raw.toInt() else null
+            is String -> raw.trim().toIntOrNull()
+            else -> null
+        }
+        if (value == null) {
+            warn("prefix.max-length 必须是 1-64 的整数，当前值 ${raw::class.java.simpleName} 非法，使用默认值 $default")
+            return default
+        }
+        val clamped = value.coerceIn(MIN_PREFIX_MAX_LENGTH, MAX_PREFIX_MAX_LENGTH)
+        if (clamped != value) {
+            warn("prefix.max-length 超出范围 1-64：$value，已钳制为 $clamped")
+        }
+        return clamped
+    }
 }

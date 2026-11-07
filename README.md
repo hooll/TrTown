@@ -9,7 +9,8 @@ Minecraft 小镇插件（Folia 26.3 / Java 25 / Dominion 4.9.5 / TabooLib 6.3）
 - 主领地绑定：把**一个已存在的 Dominion 领地**绑定为小镇主领地（`/tt setterritory` 无参 = 脚下领地）
 - 权限模型（v1.25）：**不创建 Dominion 权限组**
   - 镇长 = 领地 owner，天然全权限，TrTown 不对他做任何 Dominion 写操作；
-  - 成员 = 只加入 Dominion 成员表，**一个 flag 都不设**（与 Dominion GUI 手动加成员一致）；
+  - 成员 = 只加入 Dominion 成员表，默认带 `teleport` flag（`MEMBER.presets: [teleport]`），
+    不含建筑/容器/管理权限；
   - 管理 = 加入成员表 + 把 `administration` 预设（7 项）设为 true；降回成员时设回 false；
   - 退镇 / 被踢 / 解散 = 从 Dominion 成员表移除。
 - 领地转让：`/tt transfer <玩家>` → `/tt transfer <玩家> confirm`，小镇与主领地一起转；
@@ -21,13 +22,16 @@ Minecraft 小镇插件（Folia 26.3 / Java 25 / Dominion 4.9.5 / TabooLib 6.3）
   还没 `/tt settp` 的小镇也能传——Dominion 会把"未设置"兜底成**领地中心**（M-42）。
   普通成员默认带 `teleport` flag（`dominion.roles.MEMBER.presets: [teleport]`），否则 Dominion 会拒绝成员传送（M-44）。
 - 菜单（v1.26）：`/tt` 无参直接开 GUI，`/tt help` 仍是文字帮助
-- 聊天前缀：`%trtown_prefix%` 等 5 个 PlaceholderAPI 变量，由 TrChat 引用
+- 聊天前缀快捷编辑器：`/tt` → 设置 → 聊天前缀，铁砧改字、逐字/范围配色、16 色与 RGB、
+  静态渐变、格式开关、真实效果预览、保存/取消/恢复默认；小镇共享，镇长与管理可改，成员只读
+- 聊天前缀变量：`%trtown_prefix%` 等 5 个 PlaceholderAPI 变量，由 TrChat 引用
 - 运维：`/trtown admin reload|retry|verify|force-disband`
 
 ## 菜单（GUI）怎么用
 
-`/tt` 无参打开主菜单（3×9）。所有菜单按钮**都是走命令**（等价于你自己敲 `/tt ...`），
-所以权限判定、提示文案、异步与线程模型与命令行完全一致——GUI 只是把命令变得可点。
+`/tt` 无参打开主菜单（3×9）。大部分菜单按钮**走命令**（等价于你自己敲 `/tt ...`），
+权限判定、提示文案、异步与线程模型与命令行一致；前缀快捷编辑器是唯一例外：
+它把草稿保存在内存里，保存时直接调用与命令同构的服务入口（不拼命令字符串，避免空格/保留字差异）。
 
 | 菜单 | 入口 | 能做什么 |
 | --- | --- | --- |
@@ -36,12 +40,27 @@ Minecraft 小镇插件（Folia 26.3 / Java 25 / Dominion 4.9.5 / TabooLib 6.3）
 | 成员 | 主菜单 → 成员 | 点成员头颅：踢出 / 升为管理 / 降为成员（按你的阶级自动置灰） |
 | 邀请 | 主菜单 → 邀请 | 左键接受、右键拒绝 |
 | 领地与传送 | 主菜单 → 领地与传送 | 看领地范围与传送点；设传送点（`/tt settp`）、传送过去（`/tt tp`） |
-| 设置 | 主菜单 → 设置 | 改小镇前缀：点一下关菜单，再在聊天栏输入（30 秒内，输「取消」放弃） |
+| 设置 | 主菜单 → 设置 | 查看聊天前缀效果；镇长/管理点开快捷编辑器（成员只读） |
 | 管理员 | 主菜单 → 管理员 | reload / retry / verify / force-disband，后两个会让你在聊天栏输入参数 |
 
 - 解散、解绑领地都有**二次确认**菜单（绿色玻璃 = 确认，红色 = 取消）。
 - 关掉 GUI：`config.yml` 里 `gui.enabled: false`，`/tt` 会退回文字帮助，命令全部照旧。
 - 跨镇传送**不在 GUI 里**（避免误点），需要时敲 `/tt tp <镇名>`。
+
+### 前缀快捷编辑器
+
+入口：`/tt` → 设置 → 聊天前缀（镇长 / 管理；成员只能查看）。编辑内容只存在内存，
+点「保存」才写库；返回、关闭或 Esc 都会放弃未保存草稿。
+
+- **修改文字**：打开真实铁砧，输入框预填当前纯文字；点结果槽确认。内容与进入前相同 → 保留原配色；
+  不同 → 整段替换并清空旧配色，重新全选。直接点结果槽不再消耗经验或物品。
+- **选字与配色**：第一次点字是单字选区并记锚点，第二次点字与锚点组成范围（支持反向、跨页）。
+  16 色、HEX、粗体/删除线/下划线/斜体、清除样式都只作用于选区。
+- **渐变**：暖阳 / 海蓝 / 紫霞 / 青柠四个预设，或自定义起点/终点 HEX；各通道线性插值。
+- **恢复默认**：只标记草稿，预览立即回退到镇名（或 `fallback-to-name: false` 时的空）；
+  仍需点保存才会写 `null`。命令 `/tt setprefix reset`（忽略大小写）直接恢复默认；
+  GUI 正文里输入 `reset` 会作为普通文字保存。
+- `prefix.allow-color: false` 时色板、HEX、格式、渐变与清除样式全部禁用，保存时服务端统一去色。
 
 ## 安装
 
@@ -82,9 +101,9 @@ Minecraft 小镇插件（Folia 26.3 / Java 25 / Dominion 4.9.5 / TabooLib 6.3）
 
 ## 聊天前缀（由服主手动接入）
 
-TrTown **不参与聊天格式化**，只提供变量。唯一一处聊天监听是 GUI 的"聊天栏输入"
-（改前缀 / verify / force-disband）：命中时它只取消**那一条**消息并转发成对应命令，
-其余消息原样放行。把 `plugins/TrChat/channels/Normal.yml` 中
+TrTown **不参与聊天格式化**，只提供变量。唯一一处聊天监听用于管理菜单的
+`verify` / `force-disband` 参数输入：命中时它只取消**那一条**消息并转发成对应命令，
+其余消息原样放行（前缀已改为铁砧 GUI，不再吞普通聊天）。把 `plugins/TrChat/channels/Normal.yml` 中
 `Formats[0].prefix.part-before-player.text` 从 `' '` 改为：
 
 ```yaml
@@ -111,8 +130,11 @@ TrTown **不参与聊天格式化**，只提供变量。唯一一处聊天监听
   也就是说**管理能改领地大小、给领地改名、建/删子领地，也能加删成员、改成员 flag**。
   **Dominion 没有撤销，TrTown 也不备份领地几何**——改小了就是把地让出去，删子领地不可逆。
   **管理只给信得过的人。**
-- **成员默认没有任何 flag**：`MEMBER.presets` 为空，成员在 Dominion 里只是"成员"，
-  能不能破坏/开箱取决于领地的 guest 权限或镇长在 Dominion 里另行设置。这是用户明确要求的行为。
+- **成员默认带 `teleport`，没有建筑/容器/管理权限**：`MEMBER.presets: [teleport]` 只给
+  "回自己家"的门票；能不能破坏/开箱仍取决于领地的 guest 权限或镇长在 Dominion 里另行设置。
+- **MySQL 旧库升级**：新版本会把 `trtown_towns.prefix` 从 `VARCHAR(64)` 幂等扩为 `TEXT NULL`
+  （保留旧值与 null）；扩容失败时存储不发布 ready，插件不会带着截断风险继续保存。
+  真实 MySQL 实例仍需服主自行验证；H2 MySQL 模式测试不等于真 MySQL。
 - **转让主领地会被拦截**：在 Dominion GUI 里把主领地转给他人会失败一次，并提示改用 `/tt transfer`。
   这是有意的行为变更，避免"在 Dominion 里误点一下就把镇长换了"。
 - **转让任务失败不回滚 TrTown**：TrTown 先改镇长，Dominion `setOwner` 后调；任务重试耗尽会变 `DEAD`，
@@ -126,7 +148,11 @@ TrTown **不参与聊天格式化**，只提供变量。唯一一处聊天监听
 - `town.transfer-confirm-seconds`：已绑定主领地时转让的二次确认窗口（默认 10 秒）
 - `dominion.roles.<ROLE>.presets`：Dominion `flags.yml` 里的预设组名列表。
   **空列表合法**（该角色不设任何 flag）；preset 不存在 / 非空但展开为空 / flag 名未注册 → 启动失败
-- `prefix.*`：前缀长度/颜色/禁用字符/显示格式
+- `prefix.max-length`：可见字符数上限（按 Unicode code point 计，颜色/格式码不计数），
+  默认 16，允许 1–64；越界钳制、类型错误回退 16，同一错误配置只警告一次，reload 后重新记录
+- `prefix.allow-color`：`false` 时所有写入口统一去色，GUI 色板/HEX/格式/渐变禁用
+- `prefix.deny-chars`：正文命中即拒绝；`%` 无条件拒绝
+- `prefix.cooldown-seconds`：预留项，当前版本**未执行冷却**，前缀始终可改
 - `gui.enabled`：`false` 时 `/tt` 无参退回文字帮助（命令不受影响）
 - `gui.refresh-seconds`：占位项，当前实现是**点击时重开菜单**刷新，不轮询
 - `teleport.allow-others`：`false` 时 `/tt tp <镇名>` 一律拒绝（仍可 `/tt tp` 回自己镇）

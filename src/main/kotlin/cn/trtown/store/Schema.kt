@@ -63,7 +63,7 @@ object Schema {
             ColumnDef("dominion_id", ColType.INT),
             ColumnDef("state", ColType.VARCHAR, 16, notNull = true),
             ColumnDef("description", ColType.VARCHAR, 255),
-            ColumnDef("prefix", ColType.VARCHAR, 64),
+            ColumnDef("prefix", ColType.TEXT),
             ColumnDef("created_at", ColType.BIGINT, notNull = true),
         ),
         listOf(

@@ -66,6 +66,13 @@ object PlatformScheduler : Scheduler {
     }
 
     /**
+     * 前缀读写：统一投递到插件自有的具名单线程守护执行器。
+     *
+     * 返回 false 表示插件正在关闭、已停止接受新保存；调用方必须提示失败，不得假装成功。
+     */
+    fun runPrefixIo(task: () -> Unit): Boolean = PrefixIo.submit(task)
+
+    /**
      * 当前线程是不是**全局线程**（PLAN §5.14）。
      *
      * Folia 上命令线程是 region 线程、不等于全局线程，所以不能用 `isPrimaryThread()` 代替；

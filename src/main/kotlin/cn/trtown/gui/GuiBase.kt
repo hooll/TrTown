@@ -7,10 +7,12 @@ import cn.trtown.service.TownException
 import cn.trtown.store.ThreadGuard
 import org.bukkit.enchantments.Enchantment
 import org.bukkit.entity.Player
+import org.bukkit.inventory.Inventory
 import org.bukkit.inventory.ItemStack
 import taboolib.library.xseries.XMaterial
 import taboolib.module.ui.ClickEvent
 import taboolib.module.ui.openMenu
+import taboolib.module.ui.type.Anvil
 import taboolib.module.ui.type.Chest
 import taboolib.platform.util.buildItem
 
@@ -27,6 +29,15 @@ internal object GuiBase {
 
     /** 空白占位字符（填充玻璃板） */
     const val FILL: Char = ' '
+
+    /**
+     * 数字槽位 → 布局字符。
+     *
+     * 前缀编辑器有 27/54 格页面，若只用 `set(int, item)`，TabooLib 的 build 回调链在
+     * 无 `map` 布局时不会把物品铺出来（真机实测）。这里固定一套 54 个唯一字符，
+     * 让所有页面都走已验证的 `map` + `set(char, item)` 路径。
+     */
+    const val SLOT_CHARS: String = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWX"
 
     /** 取数失败时的兜底文案键 */
     private const val FAIL_KEY = "gui.disabled"
@@ -45,6 +56,22 @@ internal object GuiBase {
         buildItem(material) {
             name = text(nameKey, *args)
             if (loreKey != null) lore.addAll(text(loreKey, *args).split('\n'))
+            colored()
+        }
+
+    /** 直接给名字与 lore（用于预览真实前缀效果，调用方负责上色） */
+    fun itemRaw(material: XMaterial, name: String, lore: List<String> = emptyList()): ItemStack =
+        buildItem(material) {
+            this.name = name
+            if (lore.isNotEmpty()) this.lore.addAll(lore)
+            colored()
+        }
+
+    /** 铁砧输入物品（纸）：名字即预填文本，lore 为提示 */
+    fun paper(name: String, hint: String? = null): ItemStack =
+        buildItem(XMaterial.PAPER) {
+            this.name = name.ifEmpty { " " }
+            if (!hint.isNullOrEmpty()) lore.addAll(hint.split('\n'))
             colored()
         }
 
@@ -84,6 +111,69 @@ internal object GuiBase {
                 content()
                 onClick(true) { event -> event.isCancelled = true }
             }
+        }
+    }
+
+    /**
+     * 按数字槽位铺 27/54 格页面（前缀编辑器用）。
+     *
+     * 所有空槽先铺玻璃板，再执行 [content] 覆盖；[onOpened] 在玩家 region 线程、
+     * 菜单真正打开后回调，用于记录窗口身份。`onClick(true)` 在最后注册，
+     * 兜底取消任何未接管的点击与拖拽。
+     */
+    fun openSlots(
+        player: Player,
+        title: String,
+        rows: Int,
+        guard: () -> Boolean = { true },
+        onOpened: (Inventory) -> Unit = {},
+        content: Chest.() -> Unit,
+    ) {
+        val layout = (0 until rows).map { row ->
+            buildString {
+                for (column in 0 until 9) append(SLOT_CHARS[row * 9 + column])
+            }
+        }
+        PlatformScheduler.runForPlayer(player) {
+            if (!guard() || !player.isOnline) return@runForPlayer
+            player.openMenu<Chest>(title) {
+                rows(rows)
+                map(*layout.toTypedArray())
+                handLocked(true)
+                for (slot in 0 until rows * 9) set(SLOT_CHARS[slot], pane())
+                content()
+                onClick(true) { event -> event.isCancelled = true }
+            }
+            onOpened(player.openInventory.topInventory)
+        }
+    }
+
+    /**
+     * 铁砧输入页：槽 0 预填文本、槽 1 空、槽 2 结果。
+     *
+     * 只点结果槽确认；`handLocked(true)` + 末尾 `onClick(true)` 阻止取放物品与拖拽。
+     */
+    fun openAnvil(
+        player: Player,
+        title: String,
+        initial: String,
+        hint: String?,
+        guard: () -> Boolean = { true },
+        onOpened: (Inventory) -> Unit = {},
+        content: Anvil.() -> Unit,
+    ) {
+        PlatformScheduler.runForPlayer(player) {
+            if (!guard() || !player.isOnline) return@runForPlayer
+            player.openMenu<Anvil>(title) {
+                map("ABC")
+                set('A', paper(initial, hint))
+                set('B', ItemStack(org.bukkit.Material.AIR))
+                set('C', paper("✔", hint))
+                handLocked(true)
+                content()
+                onClick(true) { event -> event.isCancelled = true }
+            }
+            onOpened(player.openInventory.topInventory)
         }
     }
 
@@ -139,6 +229,21 @@ internal object GuiBase {
 internal fun Chest.button(slot: Char, stack: ItemStack, click: (ClickEvent) -> Unit) {
     set(slot, stack)
     onClick(slot) { event ->
+        event.isCancelled = true
+        click(event)
+    }
+}
+
+/** 按数字槽位铺物品（内部映射到 [GuiBase.SLOT_CHARS] 的布局字符） */
+internal fun Chest.setSlot(slot: Int, stack: ItemStack) {
+    set(GuiBase.SLOT_CHARS[slot], stack)
+}
+
+/** 按数字槽位注册按钮（前缀编辑器的 27/54 格页面） */
+internal fun Chest.buttonAt(slot: Int, stack: ItemStack, click: (ClickEvent) -> Unit) {
+    val key = GuiBase.SLOT_CHARS[slot]
+    set(key, stack)
+    onClick(key) { event ->
         event.isCancelled = true
         click(event)
     }

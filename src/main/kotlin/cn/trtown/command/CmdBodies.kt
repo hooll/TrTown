@@ -190,13 +190,38 @@ internal object CmdSetPrefix {
             execute<ProxyCommandSender> { sender, ctx, _ ->
                 Cmd.player(sender) { player ->
                     Cmd.run(sender) {
-                        val value = Cmds.prefix().set(player.uniqueId, ctx["text"])
-                        if (value == null) Cmd.replyKey(sender, "town.prefix.reset")
-                        else Cmd.replyKey(sender, "town.prefix.success", value)
+                        try {
+                            val value = Cmds.prefix().set(player.uniqueId, ctx["text"])
+                            if (value == null) Cmd.replyKey(sender, "town.prefix.reset")
+                            else Cmd.replyKey(sender, "town.prefix.success", value)
+                        } catch (ex: TownException) {
+                            Cmd.reply(sender, prefixMessage(ex))
+                        }
                     }
                 }
             }
         }
+    }
+
+    /** 前缀业务错误 → 语言键；其它错误交回通用回包。 */
+    private fun prefixMessage(ex: TownException): String = when (ex.error) {
+        TownError.PREFIX_TOO_LONG -> {
+            val parts = ex.detail?.split(">")?.map { it.trim() } ?: emptyList()
+            Messages.get(
+                "prefix.error.too-long",
+                parts.getOrNull(0)?.toIntOrNull() ?: 0,
+                parts.getOrNull(1)?.toIntOrNull() ?: 0,
+            )
+        }
+
+        TownError.PREFIX_DENY_CHAR -> Messages.get("prefix.error.deny-char", ex.detail ?: "")
+        TownError.PREFIX_INVALID_COLOR -> Messages.get("prefix.error.invalid-color")
+        TownError.PREFIX_RAW_TOO_LONG -> Messages.get("prefix.error.raw-too-long")
+        TownError.PREFIX_EMPTY -> Messages.get("prefix.error.empty")
+        TownError.PREFIX_DISABLED -> Messages.get("prefix.error.disabled")
+        TownError.PREFIX_CONFLICT -> Messages.get("prefix.error.conflict")
+        TownError.PREFIX_SAVING -> Messages.get("prefix.error.saving")
+        else -> "§c${ex.message}"
     }
 }
 
@@ -323,6 +348,8 @@ internal object CmdAdmin {
                 if (!sender.hasPermission("trtown.admin")) return@execute Cmd.replyKey(sender, "common.no-permission")
                 Cmd.run(sender) {
                     Settings.reload()
+                    // 旧编辑会话立即失效，重新进入才用新配置
+                    cn.trtown.gui.PrefixEditSessions.invalidateAll()
                     Cmds.repos()
                     cn.trtown.dominion.DominionConfig.install(cn.trtown.dominion.FlagConfig.validate())
                     Cmd.replyKey(sender, "admin.reload.done")

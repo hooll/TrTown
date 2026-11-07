@@ -22,13 +22,8 @@ import java.util.concurrent.ConcurrentHashMap
  */
 internal object ChatInput : Listener {
 
-    /** 需要聊天输入的三种动作 */
+    /** 需要聊天输入的两种动作（前缀已改为铁砧 GUI，不再吞聊天） */
     enum class Kind(val promptKey: String) {
-        /** 改聊天前缀 → `/tt setprefix <文本>` */
-        PREFIX("gui.input.prefix") {
-            override fun command(text: String): String = "tt setprefix $text"
-        },
-
         /** 校验小镇 → `/tt admin verify <镇名>` */
         VERIFY("gui.input.verify") {
             override fun command(text: String): String = "tt admin verify $text"

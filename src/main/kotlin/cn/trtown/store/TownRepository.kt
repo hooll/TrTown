@@ -94,6 +94,45 @@ class TownRepository(private val store: Store) {
         }
     }
 
+    /**
+     * 原子条件保存前缀并写审计。
+     *
+     * 只在当前值仍等于 [expected] 时更新；条件未命中返回 false 且**不写审计**。
+     * 更新与审计在同一事务内，任何一步失败都会回滚。
+     */
+    fun savePrefixWithAudit(
+        townId: Int,
+        expected: String?,
+        newValue: String?,
+        actor: UUID,
+        action: String,
+        detail: String?,
+        ts: Long,
+    ): Boolean = store.transaction { conn ->
+        val updated = conn.prepareStatement(
+            "UPDATE ${Schema.TOWNS} SET prefix = ? WHERE id = ? " +
+                "AND ((? IS NULL AND prefix IS NULL) OR prefix = ?)",
+        ).use { statement ->
+            statement.setString(1, newValue)
+            statement.setInt(2, townId)
+            statement.setString(3, expected)
+            statement.setString(4, expected)
+            statement.executeUpdate()
+        }
+        if (updated == 0) return@transaction false
+        conn.prepareStatement(
+            "INSERT INTO ${Schema.AUDIT} (ts, actor_uuid, town_id, action, detail) VALUES (?, ?, ?, ?, ?)",
+        ).use { statement ->
+            statement.setLong(1, ts)
+            statement.setString(2, actor.toString())
+            statement.setInt(3, townId)
+            statement.setString(4, action)
+            statement.setString(5, detail)
+            statement.executeUpdate()
+        }
+        true
+    }
+
     fun updateDescription(id: Int, description: String?) {
         table.update(ds) {
             set("description", description)

@@ -40,6 +40,8 @@ object TrTown : Plugin() {
 
     override fun onEnable() {
         info("TrTown v$VERSION 已启用")
+        // 前缀专用 IO 执行器：enable 时重建，兼容同 JVM 内 reload
+        cn.trtown.platform.PrefixIo.start()
 
         // M-28：插件不覆盖已存在的 lang 文件，升级新增的键必须主动合并进来，
         // 否则玩家看到的是原始键名（能跑、不报错，最难查）
@@ -107,10 +109,13 @@ object TrTown : Plugin() {
                     // 启动恢复：把 PENDING 任务拉到现在
                     Repos.fromStorage().tasks.wakeAllPending()
                     SuggestCache.refreshTownsAsync()
-                    // PAPI 扩展（软依赖）
+                    // PAPI 扩展（软依赖）：注册事件必须回主/全局线程，不能在存储异步线程里注册
                     if (Bukkit.getPluginManager().getPlugin("PlaceholderAPI") != null) {
-                        TrTownPlaceholders().register()
-                        info("PlaceholderAPI 扩展已注册：%trtown_prefix% 等 5 个变量")
+                        PlatformScheduler.runGlobal(1) {
+                            runCatching { TrTownPlaceholders().register() }
+                                .onSuccess { info("PlaceholderAPI 扩展已注册：%trtown_prefix% 等 5 个变量") }
+                                .onFailure { warning("[PAPI] 扩展注册失败: ${it.javaClass.simpleName}: ${it.message}") }
+                        }
                     }
                 }
                 .onFailure {
@@ -121,6 +126,10 @@ object TrTown : Plugin() {
     }
 
     override fun onDisable() {
+        // 先停止接受新保存，清掉所有编辑草稿；再排空已接受的前缀保存并关闭自有执行器。
+        cn.trtown.gui.PrefixEditSessions.clear()
+        runCatching { cn.trtown.platform.PrefixIo.shutdown() }
+            .onFailure { warning("[前缀] 执行器关闭失败: ${it.javaClass.simpleName}: ${it.message}") }
         info("TrTown v$VERSION 已卸载")
     }
 }
