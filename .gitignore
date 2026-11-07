@@ -18,3 +18,10 @@ dist/
 
 # 交接文档（PLAN/EXEC/AUDIT/STATE）不入库
 agent-work/
+
+# 一次性实机测试、输出 jar 与临时 Python 缓存
+tests/
+.e2e/
+*.jar
+__pycache__/
+*.pyc
