@@ -51,13 +51,32 @@ object PrefixIo {
     val isAccepting: Boolean
         get() = accepting.get()
 
-    /** 停止接受新任务 → 排空已接受任务 → 关闭执行器。 */
-    fun shutdown() {
-        if (!accepting.compareAndSet(true, false)) return
+    /** 停止接受新任务 → 排空已接受任务 → 关闭执行器；返回是否在限时内排空。 */
+    fun shutdown(timeoutMs: Long = 5_000L): Boolean {
+        if (!accepting.compareAndSet(true, false)) return true
         val current = synchronized(this) {
             executor.also { executor = null }
-        } ?: return
+        } ?: return true
         current.shutdown()
-        runCatching { current.awaitTermination(5, TimeUnit.SECONDS) }
+        val deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(timeoutMs)
+        try {
+            while (System.nanoTime() < deadline) {
+                if (current.awaitTermination(50, TimeUnit.MILLISECONDS)) return true
+            }
+        } catch (_: InterruptedException) {
+            // 调用线程被中断也必须继续走强制关闭路径，不能把中断吞掉后假装成功
+            Thread.currentThread().interrupt()
+        }
+        Log.warn("[前缀] 关闭超时：仍有已接受任务未完成，尝试中断")
+        current.shutdownNow()
+        val stopped = try {
+            current.awaitTermination(1_000L, TimeUnit.MILLISECONDS)
+        } catch (_: InterruptedException) {
+            Thread.currentThread().interrupt()
+            false
+        }
+        if (!stopped) Log.warn("[前缀] 执行器未能完全停止，仍有后台线程")
+        // 超过优雅等待时限时明确返回 false，即使中断后线程已退出
+        return false
     }
 }

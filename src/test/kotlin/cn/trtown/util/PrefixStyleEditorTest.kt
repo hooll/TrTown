@@ -67,10 +67,49 @@ class PrefixStyleEditorTest {
         val decoded = chars("&c&lA&aB&lC")
         val cleared = PrefixStyleEditor.cleared(decoded, 1..1)
         assertEquals("&c", cleared[0].color)
-        assertNull(cleared[1].color)
+        assertEquals("&f", cleared[1].color)
         assertEquals(emptySet(), cleared[1].formats)
         assertEquals("&a", cleared[2].color)
         assertTrue('l' in cleared[2].formats)
+    }
+
+    @Test
+    fun `显式白色与未指定颜色必须区分`() {
+        val inherit = chars("AB")
+        assertNull(inherit[0].color)
+        assertEquals("AB", PrefixStyleEditor.render(inherit, allowColor = true))
+
+        val white = chars("&fAB")
+        assertEquals("&f", white[0].color)
+        assertEquals("&f", white[1].color)
+        assertEquals("&fAB", PrefixStyleEditor.render(white, allowColor = true))
+
+        // 白色色板在非白外壳里也必须是显式 &f，而不是省略颜色码
+        val fromRed = chars("&cAB")
+        val painted = PrefixStyleEditor.withColor(fromRed, 0..1, "&f")!!
+        assertEquals("&fAB", PrefixStyleEditor.render(painted, allowColor = true))
+    }
+
+    @Test
+    fun `局部上色会把范围外未指定颜色落成外壳色`() {
+        val decoded = chars("ABC")
+        val painted = PrefixStyleEditor.withColor(decoded, 1..1, "&c", "&b")!!
+        assertEquals("&bA&cB&bC", PrefixStyleEditor.render(painted, allowColor = true))
+    }
+
+    @Test
+    fun `清除样式回到外壳色`() {
+        val decoded = chars("&c&lA&aB")
+        val cleared = PrefixStyleEditor.cleared(decoded, 0..0, "&b")
+        assertEquals("&bA&aB", PrefixStyleEditor.render(cleared, allowColor = true))
+    }
+
+    @Test
+    fun `重置码按显式白色保留`() {
+        val decoded = chars("&rAB")
+        assertEquals("&f", decoded[0].color)
+        assertEquals("&f", decoded[1].color)
+        assertEquals("&fAB", PrefixStyleEditor.render(decoded, allowColor = true))
     }
 
     @Test

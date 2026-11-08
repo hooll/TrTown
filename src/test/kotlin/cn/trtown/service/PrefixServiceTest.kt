@@ -256,6 +256,28 @@ class PrefixServiceTest {
     }
 
     @Test
+    fun `关闭颜色时预览与真实渲染一致`() {
+        val noColor = rules.copy(allowColor = false)
+        val prefix = service(noColor)
+        repos.towns.updatePrefix(townId, "&cA")
+        val town = assertNotNull(repos.towns.findById(townId))
+        val rendered = prefix.render(town)
+        assertEquals("&8[&bA&8] &r", rendered)
+        assertEquals(rendered, PrefixService.previewOf("&cA", "青云镇", noColor))
+        // 数据库原值不被预览改写；重新打开颜色后仍能读到原保存内容
+        assertEquals("&cA", repos.towns.findById(townId)?.prefix)
+        assertEquals("&8[&b&cA&8] &r", service(rules).render(assertNotNull(repos.towns.findById(townId))))
+    }
+
+    @Test
+    fun `外壳颜色取 display-format 中占位符前最后一个颜色码`() {
+        assertEquals("&b", PrefixValidator.shellColor(rules))
+        assertEquals("&f", PrefixValidator.shellColor(rules.copy(displayFormat = "%s")))
+        assertEquals("&#FF0000", PrefixValidator.shellColor(rules.copy(displayFormat = "&8[&#FF0000%s&8]")))
+        assertEquals("&f", PrefixValidator.shellColor(rules.copy(displayFormat = "&8[&r%s&8]")))
+    }
+
+    @Test
     fun `恢复默认写 null 后 raw 回退镇名`() {
         val prefix = service()
         prefix.set(owner, "&b青云")

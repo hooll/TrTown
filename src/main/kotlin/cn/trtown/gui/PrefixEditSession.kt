@@ -8,6 +8,7 @@ import cn.trtown.platform.PlatformScheduler
 import cn.trtown.service.PrefixRules
 import cn.trtown.service.PrefixSaveResult
 import cn.trtown.service.PrefixTarget
+import cn.trtown.service.PrefixValidator
 import cn.trtown.service.TownError
 import cn.trtown.service.TownException
 import cn.trtown.util.PrefixStyleEditor
@@ -15,6 +16,7 @@ import org.bukkit.entity.Player
 import org.bukkit.inventory.Inventory
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 
 /** 编辑器内部页面。 */
 internal enum class PrefixPage { EDITOR, STYLE, GRADIENT }
@@ -36,6 +38,8 @@ internal class PrefixEditSession(
     val role: TownRole,
     val rules: PrefixRules,
     val configGeneration: Long,
+    /** display-format 中 `%s` 前的外壳颜色；样式编辑用它落定未指定颜色的字符。 */
+    val shellColor: String,
     initialChars: List<PrefixStyleEditor.StyledChar>,
     val unreadable: Boolean,
 ) {
@@ -147,6 +151,61 @@ internal class PrefixEditSession(
 }
 
 /**
+ * 首次打开编辑器的异步请求身份。
+ *
+ * 读取目标（成员/镇/角色）在 PrefixIo 线程完成；期间玩家可能关闭设置页、切菜单、
+ * 退出或 reload。请求发出时登记原窗口与配置代次，回调必须仍是同一请求、同一窗口、
+ * 同一代次才允许创建草稿并打开编辑器。
+ */
+internal class PrefixOpenRequest(
+    val id: Long,
+    val window: Any?,
+    val generation: Long,
+)
+
+internal object PrefixOpenRequests {
+
+    private val seq = AtomicLong()
+    private val pending = ConcurrentHashMap<UUID, PrefixOpenRequest>()
+
+    /** 新请求覆盖旧请求；旧回调的身份检查会失败。 */
+    fun begin(uuid: UUID, window: Any?, generation: Long = Settings.generation): PrefixOpenRequest {
+        val request = PrefixOpenRequest(seq.incrementAndGet(), window, generation)
+        pending[uuid] = request
+        return request
+    }
+
+    fun isCurrent(uuid: UUID, request: PrefixOpenRequest): Boolean =
+        pending[uuid] === request && request.generation == Settings.generation
+
+    fun complete(uuid: UUID, request: PrefixOpenRequest) {
+        pending.remove(uuid, request)
+    }
+
+    fun cancel(uuid: UUID) {
+        pending.remove(uuid)
+    }
+
+    /** 设置页关闭时取消仍指向该窗口的请求；已换窗口/已完成的请求不受影响。 */
+    fun cancelIfWindow(uuid: UUID, window: Any?) {
+        val current = pending[uuid] ?: return
+        if (current.window === window) pending.remove(uuid, current)
+    }
+
+    fun invalidateAll() {
+        pending.clear()
+    }
+
+    fun onQuit(uuid: UUID) {
+        pending.remove(uuid)
+    }
+
+    internal fun clearForTest() {
+        pending.clear()
+    }
+}
+
+/**
  * 会话注册表与页面导航。
  *
  * 所有 GUI 回调都先核对窗口身份与配置代次；reload / 退出 / 卸载清空会话。
@@ -167,6 +226,7 @@ internal object PrefixEditSessions {
             role = target.role,
             rules = target.rules,
             configGeneration = Settings.generation,
+            shellColor = if (target.rules.allowColor) PrefixValidator.shellColor(target.rules) else "&f",
             initialChars = decoded.orEmpty(),
             unreadable = unreadable,
         )
@@ -190,20 +250,23 @@ internal object PrefixEditSessions {
         sessions.remove(session.uuid, session)
     }
 
-    /** reload：旧会话全部失效，重新进入才用新配置。 */
+    /** reload：旧会话与在途打开请求全部失效，重新进入才用新配置。 */
     fun invalidateAll() {
         sessions.values.forEach { it.closed = true }
         sessions.clear()
+        PrefixOpenRequests.invalidateAll()
     }
 
     fun onQuit(uuid: UUID) {
         sessions.remove(uuid)?.closed = true
+        PrefixOpenRequests.onQuit(uuid)
     }
 
     /** 退出/卸载释放草稿（不发消息，不重开界面）。 */
     fun clear() {
         sessions.values.forEach { it.closed = true }
         sessions.clear()
+        PrefixOpenRequests.invalidateAll()
     }
 
     /** 打开指定页面（会话仍有效时才执行）。 */

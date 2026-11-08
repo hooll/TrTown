@@ -77,7 +77,7 @@ internal object PrefixStyleMenu {
                         PrefixEditSessions.notice(player, Messages.get("gui.prefix.no-selection"))
                         return@buttonAt
                     }
-                    val chars = PrefixStyleEditor.withColor(session.chars, range, "&$code")
+                    val chars = PrefixStyleEditor.withColor(session.chars, range, "&$code", session.shellColor)
                     if (chars == null) {
                         PrefixEditSessions.notice(player, Messages.get("gui.prefix.invalid-color"))
                     } else {
@@ -109,7 +109,7 @@ internal object PrefixStyleMenu {
                     PrefixEditSessions.notice(player, Messages.get("gui.prefix.no-selection"))
                     return@buttonAt
                 }
-                session.applyChars(PrefixStyleEditor.cleared(session.chars, range))
+                session.applyChars(PrefixStyleEditor.cleared(session.chars, range, session.shellColor))
                 PrefixStyleMenu.open(player, session)
             }
 
@@ -193,9 +193,8 @@ internal object PrefixStyleMenu {
                 PrefixEditSessions.notice(player, Messages.get("gui.prefix.no-selection"))
                 return@buttonAt
             }
-            session.applyChars(PrefixStyleEditor.toggleFormat(session.chars, target, code))
+            session.applyChars(PrefixStyleEditor.toggleFormat(session.chars, target, code, session.shellColor))
             PrefixStyleMenu.open(player, session)
         }
     }
 }
-

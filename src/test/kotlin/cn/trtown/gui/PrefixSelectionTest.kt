@@ -29,6 +29,7 @@ class PrefixSelectionTest {
             role = TownRole.MAYOR,
             rules = rules,
             configGeneration = 0,
+            shellColor = "&f",
             initialChars = chars,
             unreadable = false,
         ).also { it.selectAll() }

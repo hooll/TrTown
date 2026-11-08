@@ -149,7 +149,7 @@ internal object PrefixInputMenu {
             PrefixEditSessions.notice(player, Messages.get("gui.prefix.no-selection"))
             return
         }
-        val chars = PrefixStyleEditor.withColor(session.chars, range, "&#$hex")
+        val chars = PrefixStyleEditor.withColor(session.chars, range, "&#$hex", session.shellColor)
         if (chars == null) {
             PrefixEditSessions.notice(player, Messages.get("gui.prefix.invalid-color"))
             return

@@ -97,4 +97,3 @@ internal object PrefixEditorMenu {
         }
     }
 }
-

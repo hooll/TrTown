@@ -86,11 +86,65 @@ class PrefixStorageTest {
         assertEquals(longPrefix, towns.findById(town.id)?.prefix)
     }
 
+    @Test
+    fun `扩容只看当前 schema 的同名表`() {
+        val dataSource = JdbcDataSource().apply {
+            setURL(
+                "jdbc:h2:mem:trtown_schema_${UUID.randomUUID()};MODE=MySQL;DB_CLOSE_DELAY=-1;" +
+                    "INIT=CREATE SCHEMA IF NOT EXISTS ONE\\;CREATE SCHEMA IF NOT EXISTS TWO\\;SET SCHEMA TWO",
+            )
+            user = "sa"
+            password = ""
+        }
+        val store = StoreFactory.fromSqlHost(TestSqlHost(), dataSource)
+        store.initSchema()
+
+        // 另一 schema 的同名表已经是 TEXT；当前 schema 仍是 VARCHAR(64)
+        store.dataSource.connection.use { conn ->
+            conn.createStatement().use { st ->
+                st.execute("CREATE TABLE ONE.${Schema.TOWNS} (id INT, prefix TEXT)")
+                st.execute("ALTER TABLE ${Schema.TOWNS} ALTER COLUMN prefix SET DATA TYPE VARCHAR(64)")
+            }
+        }
+        val towns = TownRepository(store)
+        val town = towns.insert("青云镇", UUID.randomUUID(), 1_000L)
+        towns.updatePrefix(town.id, "&b短值")
+
+        store.ensurePrefixTextColumn()
+
+        assertEquals("&b短值", towns.findById(town.id)?.prefix)
+        val (twoType, twoLength) = columnInfoIn(store, "TWO")
+        val (oneType, oneLength) = columnInfoIn(store, "ONE")
+        assertTrue(twoType.contains("TEXT") || twoType.contains("CLOB") || twoType.contains("LARGE OBJECT") ||
+            (twoLength ?: 0) > 65535, "当前 schema 未扩容：$twoType/$twoLength")
+        assertTrue(oneType.contains("TEXT") || oneType.contains("CLOB") || oneType.contains("LARGE OBJECT") ||
+            (oneLength ?: 0) > 65535, "另一 schema 被误改：$oneType/$oneLength")
+    }
+
     private fun openSqlite(file: File): Store {
         val dataSource = SQLiteDataSource().apply { url = "jdbc:sqlite:${file.absolutePath}" }
         val store = StoreFactory.fromSqliteHost(HostSQLite(file), dataSource)
         store.initSchema()
         return store
+    }
+
+    private fun columnInfoIn(store: Store, schema: String): Pair<String, Long?> {
+        store.dataSource.connection.use { conn ->
+            conn.prepareStatement(
+                "SELECT data_type, character_maximum_length FROM information_schema.columns " +
+                    "WHERE table_schema = ? AND UPPER(table_name) = UPPER(?) AND UPPER(column_name) = 'PREFIX'",
+            ).use { statement ->
+                statement.setString(1, schema)
+                statement.setString(2, Schema.TOWNS)
+                statement.executeQuery().use { rs ->
+                    if (rs.next()) {
+                        val length = rs.getLong(2).takeUnless { rs.wasNull() }
+                        return rs.getString(1) to length
+                    }
+                }
+            }
+        }
+        return "" to null
     }
 
     private fun columnInfo(store: Store): Pair<String, Long?> {

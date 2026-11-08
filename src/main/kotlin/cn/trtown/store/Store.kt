@@ -48,7 +48,8 @@ class Store(
      * 已经是 TEXT/CLOB 时直接返回，不每次无条件 ALTER。
      */
     fun ensurePrefixTextColumn() {
-        val (type, maxLength) = prefixColumnInfo() ?: return
+        val (type, maxLength) = prefixColumnInfo()
+            ?: throw IllegalStateException("无法读取当前库 ${Schema.TOWNS}.prefix 的列元数据")
         val upper = type.uppercase()
         if (upper.contains("TEXT") || upper.contains("CLOB") || upper.contains("LARGE OBJECT")) return
         if (!upper.contains("CHAR")) return
@@ -78,16 +79,27 @@ class Store(
         }
     }
 
-    /** 读取 prefix 列类型与最大长度；表或列不存在时返回 null。 */
+    /**
+     * 读取当前连接所在数据库/schema 的 prefix 列类型与最大长度。
+     *
+     * 必须限定 catalog/schema，避免同实例其它库的同名表把本库的 VARCHAR(64) 误判成 TEXT。
+     * 读不到本库元数据时返回 null，由调用方拒绝发布 ready。
+     */
     private fun prefixColumnInfo(): Pair<String, Long?>? {
         dataSource.connection.use { conn ->
-            // information_schema 在 MySQL 与 H2 的 MySQL 模式都可用；大小写不敏感，避免驱动差异
+            val catalog = runCatching { conn.catalog }.getOrNull()
+            val schema = runCatching { conn.schema }.getOrNull()
+            // MySQL：catalog 是数据库名；H2：schema 是当前 schema
+            val scope = schema?.takeIf { it.isNotBlank() } ?: catalog?.takeIf { it.isNotBlank() }
+                ?: return null
             runCatching {
                 conn.prepareStatement(
                     "SELECT data_type, character_maximum_length FROM information_schema.columns " +
-                        "WHERE UPPER(table_name) = UPPER(?) AND UPPER(column_name) = 'PREFIX'",
+                        "WHERE table_schema = ? AND UPPER(table_name) = UPPER(?) " +
+                        "AND UPPER(column_name) = 'PREFIX'",
                 ).use { statement ->
-                    statement.setString(1, Schema.TOWNS)
+                    statement.setString(1, scope)
+                    statement.setString(2, Schema.TOWNS)
                     statement.executeQuery().use { rs ->
                         if (rs.next()) {
                             val length = rs.getLong(2).takeUnless { rs.wasNull() }
@@ -96,11 +108,11 @@ class Store(
                     }
                 }
             }
-            // 兜底：JDBC 元数据（不同驱动的目录/模式名差异较大，两种大小写都试）
+            // 兜底：JDBC 元数据，同样限定当前 catalog/schema
             val meta = conn.metaData
             for (table in listOf(Schema.TOWNS, Schema.TOWNS.uppercase(), Schema.TOWNS.lowercase())) {
                 for (column in listOf("prefix", "PREFIX")) {
-                    meta.getColumns(null, null, table, column).use { rs ->
+                    meta.getColumns(catalog, schema, table, column).use { rs ->
                         if (rs.next()) {
                             val length = rs.getLong("COLUMN_SIZE").takeUnless { rs.wasNull() }
                             return rs.getString("TYPE_NAME") to length

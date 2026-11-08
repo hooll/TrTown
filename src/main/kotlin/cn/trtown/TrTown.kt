@@ -96,8 +96,8 @@ object TrTown : Plugin() {
             Notify.send(target, "town.invite.join-reminder", townNames.size, townNames.joinToString("、"))
         }
 
-        // 建池 + 建表必须异步：submitAsync(now = true) 会在调用线程同步执行（AC-29）
-        PlatformScheduler.runAsync(delayTicks = 1) {
+        // 建池 + 建表 + 迁移统一在前缀专用单线程执行器里：关闭时 PrefixIo.shutdown 能排空
+        val storageAccepted = PlatformScheduler.runPrefixIo {
             runCatching { Storage.init(BukkitPlugin.getInstance().dataFolder) }
                 .onSuccess {
                     info("存储就绪：${it.dialect}，共 ${it.tables.all.size} 张表")
@@ -123,13 +123,16 @@ object TrTown : Plugin() {
                     it.printStackTrace()
                 }
         }
+        if (!storageAccepted) warning("[存储] 前缀 IO 已关闭，存储未初始化")
     }
 
     override fun onDisable() {
         // 先停止接受新保存，清掉所有编辑草稿；再排空已接受的前缀保存并关闭自有执行器。
         cn.trtown.gui.PrefixEditSessions.clear()
-        runCatching { cn.trtown.platform.PrefixIo.shutdown() }
+        val drained = runCatching { cn.trtown.platform.PrefixIo.shutdown() }
             .onFailure { warning("[前缀] 执行器关闭失败: ${it.javaClass.simpleName}: ${it.message}") }
+            .getOrDefault(false)
+        if (!drained) warning("[前缀] 关闭时未能排空全部前缀操作，已尝试中断")
         info("TrTown v$VERSION 已卸载")
     }
 }

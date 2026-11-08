@@ -73,6 +73,31 @@ object Cmd {
         block(player)
     }
 
+    /**
+     * 前缀业务专用：命令线程只负责投递，实际读写在前缀 IO 单线程里执行。
+     *
+     * 这样关闭插件时 PrefixIo.shutdown 能排空命令保存，不会把写入留在通用异步池。
+     */
+    fun runPrefix(sender: ProxyCommandSender, block: () -> Unit) {
+        cn.trtown.gui.ChatInput.cancel(uuidOf(sender))
+        ThreadGuard.enterMain()
+        try {
+            val accepted = PlatformScheduler.runPrefixIo {
+                try {
+                    block()
+                } catch (ex: TownException) {
+                    reply(sender, "§c${ex.message}")
+                } catch (ex: Throwable) {
+                    reply(sender, "§c操作失败：${ex.javaClass.simpleName}: ${ex.message}")
+                    cn.trtown.platform.Log.failure("前缀命令执行", ex)
+                }
+            }
+            if (!accepted) replyKey(sender, "gui.prefix.save-failed")
+        } finally {
+            ThreadGuard.exitMain()
+        }
+    }
+
     /** 回包必须回到玩家自己的 region 线程 */
     fun reply(sender: ProxyCommandSender, text: String) {
         val player = sender.origin as? Player

@@ -223,6 +223,32 @@ internal object GuiBase {
     fun notice(player: Player, text: String) {
         PlatformScheduler.runForPlayer(player) { player.sendMessage(text) }
     }
+
+    /**
+     * 前缀读取走插件自有 PrefixIo 单线程执行器（与保存共用同一条排队）。
+     *
+     * 取数失败/执行器已关闭都只提示，不拿默认数据开店。
+     */
+    fun <T : Any> fetchPrefix(player: Player, load: () -> T?, then: (T) -> Unit) {
+        val accepted = PlatformScheduler.runPrefixIo {
+            val data = try {
+                load()
+            } catch (ex: TownException) {
+                notice(player, "§c${ex.message}")
+                return@runPrefixIo
+            } catch (ex: Throwable) {
+                Log.failure("前缀取数", ex)
+                notice(player, text(FAIL_KEY))
+                return@runPrefixIo
+            }
+            if (data == null) {
+                notice(player, text(FAIL_KEY))
+                return@runPrefixIo
+            }
+            PlatformScheduler.runForPlayer(player) { then(data) }
+        }
+        if (!accepted) notice(player, text(FAIL_KEY))
+    }
 }
 
 /** 注册一个可点物品：点击时再次显式取消，再执行 [click]（防刷物品） */

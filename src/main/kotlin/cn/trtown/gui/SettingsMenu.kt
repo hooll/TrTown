@@ -30,7 +30,9 @@ internal object SettingsMenu {
             return
         }
         val uuid = player.uniqueId
-        GuiBase.fetch(player, load = { load(uuid) }, then = { view -> render(player, view) })
+        // 重新进入设置页：旧的首次打开请求不再有效
+        PrefixOpenRequests.cancel(uuid)
+        GuiBase.fetchPrefix(player, load = { load(uuid) }, then = { view -> render(player, view) })
     }
 
     private fun load(uuid: UUID): View? {
@@ -82,6 +84,10 @@ internal object SettingsMenu {
             }
             backButton('B', player) { MainMenu.open(player) }
             closeButton('X', player)
+            // 关闭设置页/被其他菜单替换时，取消尚未完成的异步打开请求
+            onClose(true, false) { event ->
+                PrefixOpenRequests.cancelIfWindow(player.uniqueId, event.inventory)
+            }
         }
     }
 
@@ -91,20 +97,38 @@ internal object SettingsMenu {
             GuiBase.notice(player, Messages.get("gui.prefix.disabled"))
             return
         }
+        val uuid = player.uniqueId
+        val window = player.openInventory.topInventory
+        // 请求发出时登记原设置页窗口与配置代次；关闭/退出/reload/新请求都会让它失效
+        val request = PrefixOpenRequests.begin(uuid, window)
         val accepted = PlatformScheduler.runPrefixIo {
-            val result = runCatching { Cmds.prefix().openTarget(player.uniqueId) }
+            val result = runCatching { Cmds.prefix().openTarget(uuid) }
             PlatformScheduler.runForPlayer(player) {
-                if (!player.isOnline) return@runForPlayer
+                if (!PrefixOpenRequests.isCurrent(uuid, request)) return@runForPlayer
+                if (!player.isOnline) {
+                    PrefixOpenRequests.complete(uuid, request)
+                    return@runForPlayer
+                }
+                if (player.openInventory.topInventory !== window) {
+                    PrefixOpenRequests.complete(uuid, request)
+                    return@runForPlayer
+                }
                 result.fold(
                     onSuccess = { target ->
-                        val session = PrefixEditSessions.begin(player.uniqueId, target)
-                        PrefixEditSessions.put(player.uniqueId, session)
+                        PrefixOpenRequests.complete(uuid, request)
+                        PrefixEditSessions.get(uuid)?.let { stale ->
+                            PrefixEditSessions.remove(stale)
+                            stale.closed = true
+                        }
+                        val session = PrefixEditSessions.begin(uuid, target)
+                        PrefixEditSessions.put(uuid, session)
                         if (session.unreadable) {
                             PrefixEditSessions.notice(player, Messages.get("gui.prefix.unreadable"))
                         }
                         PrefixEditorMenu.open(player, session)
                     },
                     onFailure = { ex ->
+                        PrefixOpenRequests.complete(uuid, request)
                         val text = if (ex is cn.trtown.service.TownException) {
                             when (ex.error) {
                                 cn.trtown.service.TownError.PREFIX_DISABLED -> Messages.get("gui.prefix.disabled")
@@ -120,6 +144,9 @@ internal object SettingsMenu {
                 )
             }
         }
-        if (!accepted) GuiBase.notice(player, Messages.get("gui.prefix.save-failed"))
+        if (!accepted) {
+            PrefixOpenRequests.complete(uuid, request)
+            GuiBase.notice(player, Messages.get("gui.prefix.save-failed"))
+        }
     }
 }

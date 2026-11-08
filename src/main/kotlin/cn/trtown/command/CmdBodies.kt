@@ -47,7 +47,7 @@ internal object CmdPrefix {
     val command = subCommand {
         execute<ProxyCommandSender> { sender, _, _ ->
             Cmd.player(sender) { player ->
-                Cmd.run(sender) {
+                Cmd.runPrefix(sender) {
                     val town = Cmds.towns().townOf(player.uniqueId) ?: throw TownException(TownError.NOT_IN_TOWN)
                     Cmd.replyKey(sender, "town.prefix.current", Cmds.prefix().render(town), town.name)
                 }
@@ -189,7 +189,7 @@ internal object CmdSetPrefix {
         dynamic("text") {
             execute<ProxyCommandSender> { sender, ctx, _ ->
                 Cmd.player(sender) { player ->
-                    Cmd.run(sender) {
+                    Cmd.runPrefix(sender) {
                         try {
                             val value = Cmds.prefix().set(player.uniqueId, ctx["text"])
                             if (value == null) Cmd.replyKey(sender, "town.prefix.reset")

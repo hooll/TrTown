@@ -2,6 +2,7 @@ package cn.trtown.service
 
 import cn.trtown.util.PrefixCodec
 import cn.trtown.util.PrefixIssue
+import cn.trtown.util.PrefixToken
 
 /**
  * 前缀校验纯函数（不依赖数据库 / Bukkit）。
@@ -45,7 +46,24 @@ object PrefixValidator {
         return PrefixCodec.sourceOf(tokens)
     }
 
-    /** 预览：raw 为空时按 `fallback-to-name` 回退镇名。 */
+    /** 外壳颜色：display-format 中 `%s` 之前最后一个颜色码；没有则默认白色。 */
+    fun shellColor(rules: PrefixRules): String {
+        val index = rules.displayFormat.indexOf("%s")
+        val before = if (index >= 0) rules.displayFormat.substring(0, index) else rules.displayFormat
+        val lex = PrefixCodec.lex(before)
+        var color = "&f"
+        for (token in lex.tokens) {
+            when (token) {
+                is PrefixToken.LegacyColor -> color = "&${token.code}"
+                is PrefixToken.HexColor -> color = "&#${token.rgb}"
+                is PrefixToken.Format -> if (token.code == 'r') color = "&f"
+                is PrefixToken.Text -> Unit
+            }
+        }
+        return color
+    }
+
+    /** 预览：raw 为空时按 `fallback-to-name` 回退镇名；显示规则与真实 render 一致。 */
     fun previewOf(raw: String?, townName: String, rules: PrefixRules): String {
         if (!rules.enabled) return ""
         val value = if (raw.isNullOrBlank()) {
@@ -53,7 +71,14 @@ object PrefixValidator {
         } else {
             raw
         }
-        if (value.isEmpty()) return ""
-        return rules.displayFormat.replace("%s", value)
+        // 关闭颜色后，已保存/草稿/reset 的正文都必须与服务 rawOf 一样去色；
+        // 外壳 display-format 自己的颜色保留。这里只影响预览，不改数据库原值。
+        val shown = if (!rules.allowColor && value.isNotEmpty()) {
+            PrefixCodec.stripColors(value) ?: value
+        } else {
+            value
+        }
+        if (shown.isEmpty()) return ""
+        return rules.displayFormat.replace("%s", shown)
     }
 }
