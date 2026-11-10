@@ -98,6 +98,53 @@ class PrefixStyleEditorTest {
     }
 
     @Test
+    fun `外壳格式在局部换色后保留`() {
+        val decoded = chars("ABC")
+        val painted = PrefixStyleEditor.withColor(decoded, 1..1, "&c", "&b", setOf('l'))!!
+        assertEquals(
+            "&b&lA&c&lB&b&lC",
+            PrefixStyleEditor.render(painted, allowColor = true, shellColor = "&b", shellFormats = setOf('l')),
+        )
+    }
+
+    @Test
+    fun `外壳格式在格式切换后范围外不变`() {
+        val decoded = chars("ABC")
+        val toggled = PrefixStyleEditor.toggleFormat(decoded, 1..1, 'l', "&b", setOf('l'))
+        assertEquals(
+            "&b&lA&bB&lC",
+            PrefixStyleEditor.render(toggled, allowColor = true, shellColor = "&b", shellFormats = setOf('l')),
+        )
+        assertEquals(
+            PrefixStyleEditor.FormatState.ENABLED,
+            PrefixStyleEditor.formatState(decoded, 0..0, 'l', "&b", setOf('l')),
+        )
+    }
+
+    @Test
+    fun `显式重置后的字符不继承外壳格式`() {
+        val decoded = chars("A&rB")
+        assertNull(decoded[0].color)
+        assertEquals("&f", decoded[1].color)
+        assertEquals(emptySet(), decoded[1].formats)
+        val painted = PrefixStyleEditor.withColor(decoded, 0..0, "&c", "&b", setOf('l'))!!
+        assertEquals(
+            "&c&lA&fB",
+            PrefixStyleEditor.render(painted, allowColor = true, shellColor = "&b", shellFormats = setOf('l')),
+        )
+    }
+
+    @Test
+    fun `清除样式回到外壳格式`() {
+        val decoded = chars("&cA")
+        val cleared = PrefixStyleEditor.cleared(decoded, 0..0, "&b", setOf('l'))
+        assertEquals(
+            "&b&lA",
+            PrefixStyleEditor.render(cleared, allowColor = true, shellColor = "&b", shellFormats = setOf('l')),
+        )
+    }
+
+    @Test
     fun `清除样式回到外壳色`() {
         val decoded = chars("&c&lA&aB")
         val cleared = PrefixStyleEditor.cleared(decoded, 0..0, "&b")

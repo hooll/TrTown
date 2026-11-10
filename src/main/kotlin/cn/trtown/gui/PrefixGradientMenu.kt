@@ -106,7 +106,14 @@ internal object PrefixGradientMenu {
             PrefixEditSessions.notice(player, Messages.get("gui.prefix.no-selection"))
             return
         }
-        val chars = PrefixStyleEditor.withGradient(session.chars, range, from, to, session.shellColor)
+        val chars = PrefixStyleEditor.withGradient(
+            session.chars,
+            range,
+            from,
+            to,
+            session.shellColor,
+            session.shellFormats,
+        )
         if (chars == null) {
             PrefixEditSessions.notice(player, Messages.get("gui.prefix.invalid-color"))
             return

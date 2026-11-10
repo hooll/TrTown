@@ -278,6 +278,23 @@ class PrefixServiceTest {
     }
 
     @Test
+    fun `外壳样式取 display-format 中占位符前的颜色与格式`() {
+        assertEquals(PrefixValidator.ShellStyle("&b", emptySet()), PrefixValidator.shellStyle(rules))
+        assertEquals(
+            PrefixValidator.ShellStyle("&b", setOf('l')),
+            PrefixValidator.shellStyle(rules.copy(displayFormat = "&8[&b&l%s&8] &r")),
+        )
+        assertEquals(
+            PrefixValidator.ShellStyle("&f", emptySet()),
+            PrefixValidator.shellStyle(rules.copy(displayFormat = "&8[&b&l&r%s&8]")),
+        )
+        assertEquals(
+            PrefixValidator.ShellStyle("&f", setOf('l')),
+            PrefixValidator.shellStyle(rules.copy(displayFormat = "&l%s")),
+        )
+    }
+
+    @Test
     fun `恢复默认写 null 后 raw 回退镇名`() {
         val prefix = service()
         prefix.set(owner, "&b青云")

@@ -82,7 +82,7 @@ object Cmd {
         cn.trtown.gui.ChatInput.cancel(uuidOf(sender))
         ThreadGuard.enterMain()
         try {
-            val accepted = PlatformScheduler.runPrefixIo {
+            val accepted = PlatformScheduler.runPrefixIo(task = {
                 try {
                     block()
                 } catch (ex: TownException) {
@@ -91,7 +91,9 @@ object Cmd {
                     reply(sender, "§c操作失败：${ex.javaClass.simpleName}: ${ex.message}")
                     cn.trtown.platform.Log.failure("前缀命令执行", ex)
                 }
-            }
+            }, onCancelled = {
+                replyKey(sender, "gui.prefix.save-failed")
+            })
             if (!accepted) replyKey(sender, "gui.prefix.save-failed")
         } finally {
             ThreadGuard.exitMain()

@@ -230,7 +230,7 @@ internal object GuiBase {
      * 取数失败/执行器已关闭都只提示，不拿默认数据开店。
      */
     fun <T : Any> fetchPrefix(player: Player, load: () -> T?, then: (T) -> Unit) {
-        val accepted = PlatformScheduler.runPrefixIo {
+        val accepted = PlatformScheduler.runPrefixIo(task = {
             val data = try {
                 load()
             } catch (ex: TownException) {
@@ -246,7 +246,9 @@ internal object GuiBase {
                 return@runPrefixIo
             }
             PlatformScheduler.runForPlayer(player) { then(data) }
-        }
+        }, onCancelled = {
+            notice(player, text(FAIL_KEY))
+        })
         if (!accepted) notice(player, text(FAIL_KEY))
     }
 }

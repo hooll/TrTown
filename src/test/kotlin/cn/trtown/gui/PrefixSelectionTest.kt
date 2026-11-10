@@ -30,6 +30,7 @@ class PrefixSelectionTest {
             rules = rules,
             configGeneration = 0,
             shellColor = "&f",
+            shellFormats = emptySet(),
             initialChars = chars,
             unreadable = false,
         ).also { it.selectAll() }
@@ -92,5 +93,27 @@ class PrefixSelectionTest {
         session.applyChars(PrefixStyleEditor.withColor(session.chars, range, "&a")!!)
         assertEquals(true, session.draftChanged)
         assertEquals(2, session.chars.size)
+    }
+
+    @Test
+    fun `草稿序列化保留外壳格式`() {
+        val session = PrefixEditSession(
+            uuid = UUID.randomUUID(),
+            townId = 1,
+            townName = "青云镇",
+            openedPrefix = null,
+            role = TownRole.MAYOR,
+            rules = rules,
+            configGeneration = 0,
+            shellColor = "&b",
+            shellFormats = setOf('l'),
+            initialChars = PrefixStyleEditor.decode("ABC", true)!!,
+            unreadable = false,
+        )
+        val range = PrefixStyleEditor.normalizeRange(1, 1, session.chars.size)!!
+        session.applyChars(
+            PrefixStyleEditor.withColor(session.chars, range, "&c", "&b", setOf('l'))!!,
+        )
+        assertEquals("&b&lA&c&lB&b&lC", session.draftSource)
     }
 }

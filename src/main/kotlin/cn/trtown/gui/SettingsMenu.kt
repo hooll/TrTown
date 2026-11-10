@@ -101,7 +101,7 @@ internal object SettingsMenu {
         val window = player.openInventory.topInventory
         // 请求发出时登记原设置页窗口与配置代次；关闭/退出/reload/新请求都会让它失效
         val request = PrefixOpenRequests.begin(uuid, window)
-        val accepted = PlatformScheduler.runPrefixIo {
+        val accepted = PlatformScheduler.runPrefixIo(task = {
             val result = runCatching { Cmds.prefix().openTarget(uuid) }
             PlatformScheduler.runForPlayer(player) {
                 if (!PrefixOpenRequests.isCurrent(uuid, request)) return@runForPlayer
@@ -143,7 +143,10 @@ internal object SettingsMenu {
                     },
                 )
             }
-        }
+        }, onCancelled = {
+            PrefixOpenRequests.complete(uuid, request)
+            GuiBase.notice(player, Messages.get("gui.prefix.save-failed"))
+        })
         if (!accepted) {
             PrefixOpenRequests.complete(uuid, request)
             GuiBase.notice(player, Messages.get("gui.prefix.save-failed"))

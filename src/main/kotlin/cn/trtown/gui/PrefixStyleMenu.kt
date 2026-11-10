@@ -77,7 +77,13 @@ internal object PrefixStyleMenu {
                         PrefixEditSessions.notice(player, Messages.get("gui.prefix.no-selection"))
                         return@buttonAt
                     }
-                    val chars = PrefixStyleEditor.withColor(session.chars, range, "&$code", session.shellColor)
+                    val chars = PrefixStyleEditor.withColor(
+                        session.chars,
+                        range,
+                        "&$code",
+                        session.shellColor,
+                        session.shellFormats,
+                    )
                     if (chars == null) {
                         PrefixEditSessions.notice(player, Messages.get("gui.prefix.invalid-color"))
                     } else {
@@ -109,7 +115,9 @@ internal object PrefixStyleMenu {
                     PrefixEditSessions.notice(player, Messages.get("gui.prefix.no-selection"))
                     return@buttonAt
                 }
-                session.applyChars(PrefixStyleEditor.cleared(session.chars, range, session.shellColor))
+                session.applyChars(
+                    PrefixStyleEditor.cleared(session.chars, range, session.shellColor, session.shellFormats),
+                )
                 PrefixStyleMenu.open(player, session)
             }
 
@@ -180,7 +188,13 @@ internal object PrefixStyleMenu {
         val state = if (range == null) {
             PrefixStyleEditor.FormatState.DISABLED
         } else {
-            PrefixStyleEditor.formatState(session.chars, range, code)
+            PrefixStyleEditor.formatState(
+                session.chars,
+                range,
+                code,
+                session.shellColor,
+                session.shellFormats,
+            )
         }
         chest.buttonAt(slot, PrefixMenuItems.formatButton(code, state, disabled)) {
             if (session.windowId != window) return@buttonAt
@@ -193,7 +207,15 @@ internal object PrefixStyleMenu {
                 PrefixEditSessions.notice(player, Messages.get("gui.prefix.no-selection"))
                 return@buttonAt
             }
-            session.applyChars(PrefixStyleEditor.toggleFormat(session.chars, target, code, session.shellColor))
+            session.applyChars(
+                PrefixStyleEditor.toggleFormat(
+                    session.chars,
+                    target,
+                    code,
+                    session.shellColor,
+                    session.shellFormats,
+                ),
+            )
             PrefixStyleMenu.open(player, session)
         }
     }

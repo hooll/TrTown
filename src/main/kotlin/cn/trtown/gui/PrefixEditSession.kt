@@ -40,6 +40,8 @@ internal class PrefixEditSession(
     val configGeneration: Long,
     /** display-format 中 `%s` 前的外壳颜色；样式编辑用它落定未指定颜色的字符。 */
     val shellColor: String,
+    /** display-format 中 `%s` 前的外壳格式；未指定格式的字符继承它。 */
+    val shellFormats: Set<Char>,
     initialChars: List<PrefixStyleEditor.StyledChar>,
     val unreadable: Boolean,
 ) {
@@ -84,7 +86,7 @@ internal class PrefixEditSession(
 
     /** 当前草稿的规范 source（未改动时也返回打开时的内容）。 */
     val draftSource: String
-        get() = PrefixStyleEditor.render(chars, rules.allowColor) ?: ""
+        get() = PrefixStyleEditor.render(chars, rules.allowColor, shellColor, shellFormats) ?: ""
 
     /** 预览用 raw：reset / 未改动时按原值（null 表示回退镇名）。 */
     val previewRaw: String?
@@ -218,6 +220,8 @@ internal object PrefixEditSessions {
     fun begin(uuid: UUID, target: PrefixTarget): PrefixEditSession {
         val decoded = PrefixStyleEditor.decode(target.draftRaw, target.rules.allowColor)
         val unreadable = decoded == null || (target.originalPrefix != null && decoded.isEmpty())
+        val shell = if (target.rules.allowColor) PrefixValidator.shellStyle(target.rules)
+        else PrefixValidator.ShellStyle("&f", emptySet())
         val session = PrefixEditSession(
             uuid = uuid,
             townId = target.town.id,
@@ -226,7 +230,8 @@ internal object PrefixEditSessions {
             role = target.role,
             rules = target.rules,
             configGeneration = Settings.generation,
-            shellColor = if (target.rules.allowColor) PrefixValidator.shellColor(target.rules) else "&f",
+            shellColor = shell.color,
+            shellFormats = shell.formats,
             initialChars = decoded.orEmpty(),
             unreadable = unreadable,
         )
@@ -324,7 +329,7 @@ internal object PrefixEditSessions {
         session.saving = true
         // 立即重绘为"保存中"，把按钮置灰；重复点击只提示，不再发起第二次保存
         PrefixEditorMenu.open(player, session)
-        val accepted = PlatformScheduler.runPrefixIo {
+        val accepted = PlatformScheduler.runPrefixIo(task = {
             val outcome = runCatching {
                 Cmds.prefix().saveDraft(
                     actor = player.uniqueId,
@@ -349,7 +354,10 @@ internal object PrefixEditSessions {
                     },
                 )
             }
-        }
+        }, onCancelled = {
+            session.saving = false
+            notice(player, Messages.get("gui.prefix.save-failed"))
+        })
         if (!accepted) {
             session.saving = false
             notice(player, Messages.get("gui.prefix.save-failed"))

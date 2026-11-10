@@ -11,7 +11,7 @@ import kotlin.math.roundToInt
  */
 object PrefixStyleEditor {
 
-    /** 一个可见字符及其有效颜色/格式；color 为 `&a` 或 `&#RRGGBB`，null 表示默认（视觉白色）。 */
+    /** 一个可见字符及其样式；color 为 `&a` 或 `&#RRGGBB`，null 表示继承外层外壳的颜色。 */
     data class StyledChar(val value: String, val color: String?, val formats: Set<Char>)
 
     /** 格式码输出顺序固定，保证同一造型多次序列化结果稳定。 */
@@ -80,36 +80,45 @@ object PrefixStyleEditor {
     /**
      * 序列化为规范 source；当前规则无法无损表达时返回 null。
      *
-     * - `null` 颜色 = 未指定，继承外层 display-format 的颜色，不写颜色码；
+     * - `null` 颜色 = 未指定，继承外层 display-format 的颜色与格式；
      * - `&f` = 显式白色，必须写出来；`&r` 解码后同样归为显式白色；
      * - 颜色变化或需要摘除格式时重新写颜色码（颜色码本身会重置格式），
      *   避免格式泄漏到后续文字。
+     *
+     * [shellColor] / [shellFormats] 是 display-format 在 `%s` 前的有效外壳样式。
+     * 不传时按“无外壳”处理，兼容纯文本测试与调用。
      */
-    fun render(chars: List<StyledChar>, allowColor: Boolean): String? {
+    fun render(
+        chars: List<StyledChar>,
+        allowColor: Boolean,
+        shellColor: String? = null,
+        shellFormats: Set<Char> = emptySet(),
+    ): String? {
         if (!allowColor) return chars.joinToString(separator = "") { it.value }
+        val shell = shellColor?.let { normalizeColor(it) ?: return null }
         val out = StringBuilder()
-        var currentColor: String? = null
-        var currentFormats: Set<Char> = emptySet()
-        var seenColor = false
+        // 没有任何显式颜色时仍未改动“继承外壳”的写法，不写冗余颜色码；
+        // 一旦有字符带显式颜色（例如局部上色后的草稿），则从第一个字符起显式写出外壳色，
+        // 便于保存后的 raw 自身也能区分“继承”与“显式”。
+        val emitsShellColor = shell != null && chars.any { it.color != null }
+        var currentColor: String? = if (emitsShellColor) null else shell
+        var currentFormats: Set<Char> = if (emitsShellColor || shell == null) emptySet() else shellFormats
         for (char in chars) {
-            // 一旦出现过颜色，后面的“未指定”只能落到默认白色（Minecraft 没有回到外壳色的指令）
-            val desiredColor = when {
-                char.color != null -> char.color.also { seenColor = true }
-                seenColor -> "&f"
-                else -> null
-            }
+            val explicitColor = char.color?.let { normalizeColor(it) ?: return null }
+            val desiredColor = explicitColor ?: shell
+            val desiredFormats = if (explicitColor == null) shellFormats + char.formats else char.formats
             if (desiredColor != currentColor) {
                 if (!emitColor(out, desiredColor, currentColor, currentFormats)) return null
                 currentColor = desiredColor
                 currentFormats = emptySet()
-            } else if (currentFormats.any { it !in char.formats }) {
-                // 当前格式比目标多（例如同色段里摘掉粗体）时必须重发颜色码来重置，
+            } else if (currentFormats.any { it !in desiredFormats }) {
+                // 当前格式比目标多（例如同色段里摘掉外壳粗体）时必须重发颜色码来重置，
                 // 否则多出来的格式会继续泄漏到后面的字符上。
                 if (!emitColor(out, desiredColor, currentColor, currentFormats)) return null
                 currentFormats = emptySet()
             }
             for (code in FORMAT_ORDER) {
-                if (code in char.formats && code !in currentFormats) {
+                if (code in desiredFormats && code !in currentFormats) {
                     out.append('&').append(code)
                     currentFormats = currentFormats + code
                 }
@@ -146,17 +155,18 @@ object PrefixStyleEditor {
     /**
      * 只改范围内每个字符的颜色，格式与范围外字符保持原样。
      *
-     * `fallbackColor` 是外壳颜色：样式编辑会把“未指定颜色”的字符先落成这个颜色，
-     * 避免选中部分字符上色后，后面的未指定字符被 Minecraft 当成默认白色。
+     * `fallbackColor` / `fallbackFormats` 是外壳样式：样式编辑会把“继承外壳”的字符
+     * 先落成显式外壳样式，避免选中部分字符上色后，范围外字符改变实际颜色或格式。
      */
     fun withColor(
         chars: List<StyledChar>,
         range: IntRange,
         color: String,
         fallbackColor: String? = null,
+        fallbackFormats: Set<Char> = emptySet(),
     ): List<StyledChar>? {
         val normalized = normalizeColor(color) ?: return null
-        val base = materialize(chars, fallbackColor)
+        val base = materialize(chars, fallbackColor, fallbackFormats)
         return base.mapIndexed { index, char ->
             if (index in range) char.copy(color = normalized) else char
         }
@@ -169,12 +179,13 @@ object PrefixStyleEditor {
         from: String,
         to: String,
         fallbackColor: String? = null,
+        fallbackFormats: Set<Char> = emptySet(),
     ): List<StyledChar>? {
         val indices = range.filter { it in chars.indices }
         if (indices.isEmpty()) return null
         val fromRgb = rgbOf(from) ?: return null
         val toRgb = rgbOf(to) ?: return null
-        val result = materialize(chars, fallbackColor).toMutableList()
+        val result = materialize(chars, fallbackColor, fallbackFormats).toMutableList()
         for ((position, index) in indices.withIndex()) {
             result[index] = result[index].copy(
                 color = "&#" + gradientHex(fromRgb, toRgb, position, indices.size),
@@ -189,8 +200,9 @@ object PrefixStyleEditor {
         range: IntRange,
         code: Char,
         fallbackColor: String? = null,
+        fallbackFormats: Set<Char> = emptySet(),
     ): List<StyledChar> {
-        val base = materialize(chars, fallbackColor)
+        val base = materialize(chars, fallbackColor, fallbackFormats)
         val selected = base.filterIndexed { index, _ -> index in range }
         val allHave = selected.isNotEmpty() && selected.all { code in it.formats }
         return base.mapIndexed { index, char ->
@@ -199,27 +211,43 @@ object PrefixStyleEditor {
         }
     }
 
-    /** 清除范围内颜色与格式，回到默认样式；范围外不动。 */
+    /** 清除范围内颜色与格式，回到外壳默认样式；范围外不动。 */
     fun cleared(
         chars: List<StyledChar>,
         range: IntRange,
         fallbackColor: String = "&f",
+        fallbackFormats: Set<Char> = emptySet(),
     ): List<StyledChar> {
-        val base = materialize(chars, fallbackColor)
+        val base = materialize(chars, fallbackColor, fallbackFormats)
         return base.mapIndexed { index, char ->
-            if (index in range) char.copy(color = fallbackColor, formats = emptySet()) else char
+            if (index in range) char.copy(color = fallbackColor, formats = fallbackFormats) else char
         }
     }
 
-    private fun materialize(chars: List<StyledChar>, fallbackColor: String?): List<StyledChar> =
+    private fun materialize(
+        chars: List<StyledChar>,
+        fallbackColor: String?,
+        fallbackFormats: Set<Char>,
+    ): List<StyledChar> =
         if (fallbackColor == null) chars
-        else chars.map { if (it.color == null) it.copy(color = fallbackColor) else it }
+        else chars.map {
+            if (it.color == null) it.copy(color = fallbackColor, formats = fallbackFormats + it.formats) else it
+        }
 
-    /** 范围内某格式的状态：ENABLED / DISABLED / MIXED。 */
-    fun formatState(chars: List<StyledChar>, range: IntRange, code: Char): FormatState {
+    /** 范围内某格式的状态：ENABLED / DISABLED / MIXED；外壳格式参与“继承”字符的有效状态。 */
+    fun formatState(
+        chars: List<StyledChar>,
+        range: IntRange,
+        code: Char,
+        fallbackColor: String? = null,
+        fallbackFormats: Set<Char> = emptySet(),
+    ): FormatState {
         val selected = chars.filterIndexed { index, _ -> index in range }
         if (selected.isEmpty()) return FormatState.DISABLED
-        val count = selected.count { code in it.formats }
+        val count = selected.count { char ->
+            val effective = if (char.color == null && fallbackColor != null) fallbackFormats + char.formats else char.formats
+            code in effective
+        }
         return when (count) {
             0 -> FormatState.DISABLED
             selected.size -> FormatState.ENABLED

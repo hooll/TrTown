@@ -72,6 +72,9 @@ object PlatformScheduler : Scheduler {
      */
     fun runPrefixIo(task: () -> Unit): Boolean = PrefixIo.submit(task)
 
+    fun runPrefixIo(task: () -> Unit, onCancelled: () -> Unit): Boolean =
+        PrefixIo.submit(task, onCancelled)
+
     /**
      * 当前线程是不是**全局线程**（PLAN §5.14）。
      *

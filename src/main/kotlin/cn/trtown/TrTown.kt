@@ -41,7 +41,9 @@ object TrTown : Plugin() {
     override fun onEnable() {
         info("TrTown v$VERSION 已启用")
         // 前缀专用 IO 执行器：enable 时重建，兼容同 JVM 内 reload
-        cn.trtown.platform.PrefixIo.start()
+        if (!cn.trtown.platform.PrefixIo.start()) {
+            warning("[前缀] 旧执行器尚未终止，本次启用不会创建新的前缀写线程")
+        }
 
         // M-28：插件不覆盖已存在的 lang 文件，升级新增的键必须主动合并进来，
         // 否则玩家看到的是原始键名（能跑、不报错，最难查）
@@ -97,7 +99,7 @@ object TrTown : Plugin() {
         }
 
         // 建池 + 建表 + 迁移统一在前缀专用单线程执行器里：关闭时 PrefixIo.shutdown 能排空
-        val storageAccepted = PlatformScheduler.runPrefixIo {
+        val storageAccepted = PlatformScheduler.runPrefixIo(task = {
             runCatching { Storage.init(BukkitPlugin.getInstance().dataFolder) }
                 .onSuccess {
                     info("存储就绪：${it.dialect}，共 ${it.tables.all.size} 张表")
@@ -122,7 +124,9 @@ object TrTown : Plugin() {
                     severe("存储初始化失败：${it.javaClass.simpleName}: ${it.message}")
                     it.printStackTrace()
                 }
-        }
+        }, onCancelled = {
+            warning("[存储] 前缀 IO 关闭时取消了排队中的存储初始化")
+        })
         if (!storageAccepted) warning("[存储] 前缀 IO 已关闭，存储未初始化")
     }
 
